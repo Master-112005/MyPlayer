@@ -1,0 +1,46 @@
+{
+  "name": "mymusicplayer",
+  "version": "1.0.0",
+  "description": "A black and white Liquid Glass desktop music player for Windows",
+  "main": "src/main.cjs",
+  "author": "MyMusicPlayer",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "dependencies": {
+    "music-metadata": "^11.9.0"
+  },
+  "devDependencies": {
+    "electron": "^45.1.0",
+    "electron-builder": "^26.2.0"
+  },
+  "build": {
+    "appId": "com.mymusicplayer.desktop",
+    "productName": "MyMusicPlayer",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "node_modules/music-metadata/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "MyMusicPlayer-Setup-${version}.${ext}",
+      "icon": "assets/mymusicplayer.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
+  "allowScripts": {
+    "electron@45.1.0": true
+  }
+}
