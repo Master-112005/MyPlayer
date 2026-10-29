@@ -89,6 +89,10 @@ async function refreshVideoLibrary() {
 
 $('videoFolderButton').addEventListener('click', chooseVideoFolder);
 $('refreshVideoLibrary').addEventListener('click', refreshVideoLibrary);
+$('defaultVideoButton').addEventListener('click', async () => {
+  if (await window.player.openDefaultApps('video')) setStatus('In Windows Settings, choose another app for .mp4 and any other video formats assigned to MyCinema.');
+  else setStatus('Windows Default Apps settings could not be opened.');
+});
 $('cinemaSearch').addEventListener('input', renderVideos);
 $('cinemaMinimize').addEventListener('click', () => window.player.minimize());
 $('cinemaClose').addEventListener('click', () => window.player.close());

@@ -1,9 +1,17 @@
-const { app, BrowserWindow, dialog, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, screen, shell } = require('electron');
 const { pathToFileURL } = require('node:url');
 const path = require('node:path');
 const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
-const launchMode = process.argv.includes('--player=cinema') ? 'cinema' : 'music';
+const audioExtensions = new Set(['.mp3', '.m4a', '.aac', '.wav', '.flac', '.ogg', '.opus', '.wma', '.aiff', '.aif']);
+const videoExtensions = new Set(['.3g2', '.3gp', '.3gpp', '.amv', '.asf', '.avi', '.bik', '.cam', '.cine', '.divx', '.drc', '.dsm', '.dv', '.dat', '.evo', '.f4v', '.fli', '.flc', '.flv', '.gvi', '.h264', '.h265', '.hevc', '.m1v', '.m2p', '.m2t', '.m2ts', '.m2v', '.m4v', '.mjpeg', '.mjpg', '.mkv', '.mks', '.mod', '.mov', '.mp2', '.mp4', '.mpe', '.mpeg', '.mpeg1', '.mpeg2', '.mpeg4', '.mpg', '.mpv', '.mpv2', '.mts', '.mxf', '.nsv', '.nut', '.nuv', '.ogm', '.ogv', '.ogx', '.pva', '.qt', '.rec', '.rm', '.rmvb', '.roq', '.rv', '.smk', '.str', '.tp', '.trp', '.ts', '.vob', '.webm', '.wmv', '.wtv', '.xvid', '.y4m', '.yuv']);
+const startupFilePath = process.argv.slice(1).find(argument => {
+  const extension = path.extname(argument).toLowerCase();
+  if (!path.isAbsolute(argument) || (!audioExtensions.has(extension) && !videoExtensions.has(extension))) return false;
+  try { return fsSync.statSync(argument).isFile(); } catch { return false; }
+}) || null;
+const startupFileType = startupFilePath && (videoExtensions.has(path.extname(startupFilePath).toLowerCase()) ? 'video' : 'audio');
+const launchMode = startupFileType ? (startupFileType === 'video' ? 'cinema' : 'music') : process.argv.includes('--player=cinema') ? 'cinema' : 'music';
 
 if (launchMode === 'cinema') {
   const sessionDataPath = path.join(app.getPath('userData'), 'MyCinemaSession');
@@ -11,8 +19,6 @@ if (launchMode === 'cinema') {
   app.setPath('sessionData', sessionDataPath);
 }
 
-const audioExtensions = new Set(['.mp3', '.m4a', '.aac', '.wav', '.flac', '.ogg', '.opus', '.wma', '.aiff', '.aif']);
-const videoExtensions = new Set(['.3g2', '.3gp', '.3gpp', '.amv', '.asf', '.avi', '.bik', '.cam', '.cine', '.divx', '.drc', '.dsm', '.dv', '.evo', '.f4v', '.fli', '.flc', '.flv', '.gvi', '.h264', '.h265', '.hevc', '.m1v', '.m2p', '.m2t', '.m2ts', '.m2v', '.m4v', '.mjpeg', '.mjpg', '.mkv', '.mks', '.mod', '.mov', '.mp2', '.mp4', '.mpe', '.mpeg', '.mpeg1', '.mpeg2', '.mpeg4', '.mpg', '.mpv', '.mpv2', '.mts', '.mxf', '.nsv', '.nut', '.nuv', '.ogm', '.ogv', '.ogx', '.pva', '.qt', '.rec', '.rm', '.rmvb', '.roq', '.rv', '.smk', '.str', '.tp', '.trp', '.ts', '.vob', '.webm', '.wmv', '.wtv', '.xvid', '.y4m', '.yuv']);
 let mainWindow;
 let mpvMain;
 let videoWindow;
@@ -51,7 +57,7 @@ function createWindow(mode) {
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: false }
   });
   attachMpvWindow(mainWindow);
-  mainWindow.loadFile(path.join(__dirname, 'index.html'), { query: { app: mode } });
+  mainWindow.loadFile(path.join(__dirname, 'index.html'), { query: { app: mode, ...(startupFileType === 'audio' ? { filePath: startupFilePath } : {}) } });
   mainWindow.once('ready-to-show', () => mainWindow.show());
 }
 
@@ -65,7 +71,10 @@ function createVideoWindow(filePath, title) {
     return true;
   }
 
-  const area = screen.getDisplayMatching(mainWindow.getBounds()).workArea;
+  const display = mainWindow && !mainWindow.isDestroyed()
+    ? screen.getDisplayMatching(mainWindow.getBounds())
+    : screen.getPrimaryDisplay();
+  const area = display.workArea;
   const width = Math.min(1100, area.width - 32);
   const height = Math.round(width * 9 / 16);
   videoWindowFullscreen = false;
@@ -158,6 +167,17 @@ ipcMain.handle('choose-video-folder', async () => {
   return { folder, videos: await scanVideoFolder(folder) };
 });
 ipcMain.handle('scan-video-folder', async (_event, folder) => typeof folder === 'string' ? scanVideoFolder(folder) : []);
+ipcMain.handle('open-default-apps', async (event, kind) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents || (kind !== 'audio' && kind !== 'video') || (kind === 'video') !== (launchMode === 'cinema')) return false;
+  if (!app.isPackaged || process.platform !== 'win32') return false;
+  const settingsUrl = kind === 'audio'
+    ? `ms-settings:defaultapps?registeredAppUser=MyMusic`
+    : 'ms-settings:defaultapps?registeredAppUser=MyCinema';
+  try {
+    await shell.openExternal(settingsUrl);
+    return true;
+  } catch { return false; }
+});
 ipcMain.handle('open-video-window', async (event, filePath, title) => {
   if (!mainWindow || event.sender !== mainWindow.webContents || typeof filePath !== 'string' || !path.isAbsolute(filePath) || !videoExtensions.has(path.extname(filePath).toLowerCase())) return false;
   try { if (!(await fs.stat(filePath)).isFile()) return false; } catch { return false; }
@@ -274,7 +294,8 @@ ipcMain.on('window-close', event => {
 ipcMain.on('window-minimize', event => BrowserWindow.fromWebContents(event.sender)?.minimize());
 app.whenReady().then(async () => {
   try { const { createMpvMain } = await import('electron-mpv-video/main'); mpvMain = createMpvMain(); } catch (error) { console.error('MPV initialization failed:', error); }
-  createWindow(launchMode);
+  if (startupFileType === 'video') createVideoWindow(startupFilePath, path.basename(startupFilePath));
+  else createWindow(launchMode);
 });
 app.on('before-quit', () => { void mpvMain?.dispose().catch(error => console.error('MPV shutdown failed:', error)); });
 app.on('window-all-closed', () => app.quit());

@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('player', {
   openVideoWindow: (filePath, title) => ipcRenderer.invoke('open-video-window', filePath, title),
   setVideoAspect: (width, height) => ipcRenderer.invoke('set-video-aspect', width, height),
   setVideoFullscreen: fullscreen => ipcRenderer.invoke('set-video-fullscreen', fullscreen),
+  openDefaultApps: kind => ipcRenderer.invoke('open-default-apps', kind),
   onVideoFullscreenChanged: callback => {
     const listener = (_event, fullscreen) => callback(fullscreen);
     ipcRenderer.on('video-fullscreen-changed', listener);

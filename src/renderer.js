@@ -9,7 +9,7 @@ const ui = {
   trackTitle: $('trackTitle'), trackArtist: $('trackArtist'), trackCount: $('trackCount'), libraryLabel: $('libraryLabel'),
   artwork: $('artwork'), artworkWrap: $('artworkWrap'), queuePanel: $('queuePanel'), queueList: $('queueList'),
   toast: $('toast'), homeTitle: $('homeTitle'), homeShortcuts: $('homeShortcuts'), homeLibrary: $('homeLibrary'), settingsView: $('settingsView'),
-  playlistGrid: $('playlistGrid'), homeSongCount: $('homeSongCount'), favoriteSongCount: $('favoriteSongCount'), settingsPlaylistList: $('settingsPlaylistList'), homeNotes: $('homeNotes'), colorNotesToggle: $('colorNotesToggle'), homeSearchButton: $('homeSearchButton'), homeCreatePlaylistButton: $('homeCreatePlaylistButton'), homeSettingsButton: $('homeSettingsButton'), homeHomeButton: $('homeHomeButton'), homeCloseButton: $('homeCloseButton'), homeMinimizeButton: $('homeMinimizeButton'), settingsFolderButton: $('settingsFolderButton'), settingsRescanButton: $('settingsRescanButton'),
+  playlistGrid: $('playlistGrid'), homeSongCount: $('homeSongCount'), favoriteSongCount: $('favoriteSongCount'), settingsPlaylistList: $('settingsPlaylistList'), homeNotes: $('homeNotes'), colorNotesToggle: $('colorNotesToggle'), homeSearchButton: $('homeSearchButton'), homeCreatePlaylistButton: $('homeCreatePlaylistButton'), homeSettingsButton: $('homeSettingsButton'), homeHomeButton: $('homeHomeButton'), homeCloseButton: $('homeCloseButton'), homeMinimizeButton: $('homeMinimizeButton'), settingsFolderButton: $('settingsFolderButton'), settingsRescanButton: $('settingsRescanButton'), defaultAudioButton: $('defaultAudioButton'),
   allSongsCard: $('allSongsCard'), favoritesCard: $('favoritesCard'), playlistDialog: $('playlistDialog'), playlistForm: $('playlistForm'),
   playlistName: $('playlistName'), cancelPlaylist: $('cancelPlaylist'), addPlaylistDialog: $('addPlaylistDialog'), addPlaylistForm: $('addPlaylistForm'), playlistChoices: $('playlistChoices'), cancelAddPlaylist: $('cancelAddPlaylist'), confirmationDialog: $('confirmationDialog'), confirmationTitle: $('confirmationTitle'), confirmationMessage: $('confirmationMessage'), nowPlayingPlay: $('nowPlayingPlay'),
   nowPlayingBar: $('nowPlayingBar'), nowPlayingTitle: $('nowPlayingTitle'), nowPlayingArtist: $('nowPlayingArtist'), nowPlayingArt: $('nowPlayingArt')
@@ -438,6 +438,9 @@ function moveTrack(direction) {
 }
 ui.settingsFolderButton.addEventListener('click', selectFolder);
 ui.settingsRescanButton.addEventListener('click', rescan);
+ui.defaultAudioButton.addEventListener('click', async () => {
+  if (!await window.player.openDefaultApps('audio')) showToast('Install MyPlayer to register MyMusic with Windows.');
+});
 ui.colorNotesToggle.checked = colorfulNotes;
 ui.homeNotes.classList.toggle('color-notes-on', colorfulNotes);
 ui.colorNotesToggle.addEventListener('change', () => {
@@ -533,7 +536,18 @@ audio.addEventListener('timeupdate', () => {
 audio.addEventListener('loadedmetadata', () => { if (Number.isFinite(audio.duration)) ui.duration.textContent = formatTime(audio.duration); });
 audio.addEventListener('ended', () => { if ((playbackPaths?.length || tracks.length) > 1) moveTrack(1); else { setPlaying(false); audio.currentTime = 0; } });
 audio.addEventListener('error', () => { if (audio.src) { setPlaying(false); showToast('This audio format could not be played by Windows'); } });
-if (folder) {
+const startupAudioPath = new URLSearchParams(location.search).get('filePath');
+if (startupAudioPath) {
+  const separator = Math.max(startupAudioPath.lastIndexOf('\\'), startupAudioPath.lastIndexOf('/'));
+  const startupFolder = separator === 2 && startupAudioPath[1] === ':' ? startupAudioPath.slice(0, 3) : startupAudioPath.slice(0, separator);
+  folder = startupFolder;
+  window.player.scanFolder(startupFolder).then(found => {
+    tracks = found; restoreTrackOrder(); setTrackCount(); renderQueue(); renderPlaylists();
+    const index = tracks.findIndex(track => track.path.toLocaleLowerCase() === startupAudioPath.toLocaleLowerCase());
+    if (index >= 0) { playbackSource = { type: 'all' }; playbackPaths = null; void playTrack(index); }
+    else showToast('Could not find that audio file in its folder');
+  }).catch(() => showToast('Could not open that audio file'));
+} else if (folder) {
   window.player.scanFolder(folder).then(found => {
     tracks = found; restoreTrackOrder(); setTrackCount(); renderQueue(); renderPlaylists();
     if (!tracks.length) { ui.trackTitle.textContent = 'No music found'; ui.trackArtist.textContent = 'Choose a folder to get started'; }

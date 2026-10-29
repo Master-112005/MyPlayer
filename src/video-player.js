@@ -15,6 +15,9 @@ let moving = false;
 let scrubbing = false;
 let lastAspect = 0;
 let fullscreen = false;
+let volumeLevel = Number($('volume').value) || 75;
+let previousVolumeLevel = volumeLevel;
+let muted = false;
 
 function timeText(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -134,6 +137,29 @@ async function showTrackMenu(type, anchor) {
     menu.classList.add('hidden');
   }
 }
+async function cycleTrack(type) {
+  try {
+    const tracks = await video.getTracks(type);
+    if (!tracks.length) return showTrackMenu(type, type === 'audio' ? $('audioTrack') : $('subtitleTrack'));
+    const options = type === 'sub' ? [{ id: 'no', selected: tracks.every(track => !track.selected) }, ...tracks] : tracks;
+    const current = options.findIndex(track => track.selected);
+    const next = options[(current + 1) % options.length];
+    await video.selectTrack(type, String(next.id));
+    $('trackMenu').classList.add('hidden');
+    showControls();
+  } catch (error) {
+    reportError(`Could not change ${type === 'audio' ? 'audio' : 'subtitle'} track: ${error.message || error}`);
+  }
+}
+function setVolume(level) {
+  volumeLevel = Math.max(0, Math.min(200, level));
+  $('volume').value = String(volumeLevel);
+  $('volumeValue').textContent = `${volumeLevel}%`;
+  if (volumeLevel > 0) { previousVolumeLevel = volumeLevel; muted = false; }
+  else muted = true;
+  video.setVolume(volumeLevel).catch(error => reportError(`Volume change failed: ${error.message || error}`));
+  showControls();
+}
 async function setFullscreen(requested) {
   try {
     const active = await window.player.setVideoFullscreen(requested);
@@ -185,9 +211,7 @@ $('timeline').addEventListener('change', async () => {
 });
 $('timeline').addEventListener('pointercancel', () => { scrubbing = false; updateProgress(); });
 $('volume').addEventListener('input', () => {
-  $('volumeValue').textContent = `${$('volume').value}%`;
-  video.setVolume(Number($('volume').value)).catch(error => reportError(`Volume change failed: ${error.message || error}`));
-  showControls();
+  setVolume(Number($('volume').value));
 });
 $('fullscreen').addEventListener('click', () => setFullscreen(!fullscreen));
 $('player').addEventListener('dblclick', event => {
@@ -216,11 +240,24 @@ document.addEventListener('click', event => {
   if (!event.target.closest('#trackMenu, #audioTrack, #subtitleTrack')) $('trackMenu').classList.add('hidden');
 });
 document.addEventListener('keydown', event => {
-  if (event.code === 'Space') { event.preventDefault(); togglePlay(); }
-  if (event.code === 'ArrowLeft') seekBy(-10);
-  if (event.code === 'ArrowRight') seekBy(10);
-  if (event.code === 'Escape') setFullscreen(false);
-  showControls();
+  if (event.target.closest('textarea,[contenteditable="true"],input:not([type="range"])')) return;
+  const key = event.key.toLowerCase();
+  let handled = true;
+  if (event.altKey && event.code === 'ArrowLeft') seekBy(-30);
+  else if (event.altKey && event.code === 'ArrowRight') seekBy(30);
+  else if (event.ctrlKey && event.code === 'ArrowLeft') seekBy(15);
+  else if (event.code === 'Space') togglePlay();
+  else if (event.code === 'ArrowLeft') seekBy(-10);
+  else if (event.code === 'ArrowRight') seekBy(10);
+  else if (event.code === 'ArrowUp') setVolume(volumeLevel + 5);
+  else if (event.code === 'ArrowDown') setVolume(volumeLevel - 5);
+  else if (key === 'm') setVolume(muted ? (previousVolumeLevel || 75) : 0);
+  else if (key === 'v') void cycleTrack('sub');
+  else if (key === 'b') void cycleTrack('audio');
+  else if (key === 'f') { if (!fullscreen) void setFullscreen(true); }
+  else if (key === 'i' || event.code === 'Escape') { if (fullscreen) void setFullscreen(false); }
+  else handled = false;
+  if (handled) { event.preventDefault(); showControls(); }
 });
 
 const initialPath = params.get('filePath');
