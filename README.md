@@ -1,16 +1,19 @@
-# MyMusicPlayer
+# MyPlayer
 
-A Windows music player with a black and white, Apple inspired Liquid Glass interface. The main window opens at 350 x 600; the circular artwork button switches to a 440 x 140 horizontal mini player. Features include local music folders, search, drag-to-reorder library, embedded cover art, shuffle, favorites, seek, and volume. Music stays in its existing folders.
+MyPlayer installs two separate apps: **MyMusic** and **MyCinema**. The installer creates separate Start menu and desktop shortcuts, and each shortcut opens directly into its app. MyCinema scans a chosen folder and shows videos as widescreen cards. The music library and playback features remain in MyMusic.
 
-## Run the app
+MyCinemaPlayer uses libmpv with FFmpeg for broad video and audio codec support, including common MP4/MOV, MKV/WebM, AVI, MPEG, FLV and Ogg containers. Container support is not a promise that every codec or every damaged, encrypted, or proprietary file will decode. There is no player that can guarantee support for every file called one of “2,000 formats.”
 
-1. Install Node.js 20 or newer.
-2. Open PowerShell in the project folder (or run `Set-Location "$env:USERPROFILE\Desktop\MyMusicPlayer"`).
-3. Run `npm install` once.
-4. Run `npm start` to launch the app.
+## Run from source
 
-## Generate the Windows executable
+1. Install Node.js 22 or newer and Visual Studio Build Tools with the C++ workload.
+2. Install dependencies with `npm install`.
+3. Install the Windows x64 libmpv development files from the [MPV Windows builds](https://mpv.io/installation/) page under `%USERPROFILE%\libmpv`, with headers in `include\mpv`, the DLL in `bin`, and an MSVC import library at `lib\mpv.lib`.
+4. From an x64 Visual Studio developer command prompt, create the import library with `powershell -ExecutionPolicy Bypass -File .\node_modules\electron-mpv-video\scripts\create-libmpv-import-lib.ps1`, then run `npm run build:mpv`.
+5. Run `npm start` for MyMusic or `npm run start:cinema` for MyCinema.
 
-From the project folder, run `npm run dist`. The x64 Windows installer will be created at `dist/MyMusicPlayer-Setup-1.0.0.exe`.
+## Build the Windows installer
 
-Supported file extensions are MP3, M4A, AAC, WAV, FLAC, OGG, Opus, WMA and AIFF. Playback depends on codecs included with Electron/Chromium; WMA may not decode on every system.
+With the native MPV addon built, run `npm run dist`. The single installer is written to `dist/MyPlayer-Setup-1.0.0.exe` and installs both apps.
+
+The bundled MPV/FFmpeg build has separate third-party licensing terms; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

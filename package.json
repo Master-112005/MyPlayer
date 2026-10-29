@@ -1,15 +1,20 @@
 {
-  "name": "mymusicplayer",
-  "version": "1.0.0",
-  "description": "A black and white Liquid Glass desktop music player for Windows",
+  "name": "myplayer",
+  "version": "1.0.4",
+  "description": "A black and white Liquid Glass desktop music and video player",
   "main": "src/main.cjs",
-  "author": "MyMusicPlayer",
+  "author": "MyPlayer",
   "license": "UNLICENSED",
   "scripts": {
-    "start": "electron .",
+    "start": "electron . --player=music",
+    "start:music": "electron . --player=music",
+    "start:cinema": "electron . --player=cinema",
+    "postinstall": "node scripts/patch-mpv-tracks.cjs",
+    "build:mpv": "npm run build:native --prefix node_modules/electron-mpv-video",
     "dist": "electron-builder --win nsis"
   },
   "dependencies": {
+    "electron-mpv-video": "^0.1.1",
     "music-metadata": "^11.9.0"
   },
   "devDependencies": {
@@ -17,27 +22,44 @@
     "electron-builder": "^26.2.0"
   },
   "build": {
-    "appId": "com.mymusicplayer.desktop",
-    "productName": "MyMusicPlayer",
+    "appId": "com.myplayer.desktop",
+    "productName": "MyPlayer",
     "directories": {
       "output": "dist"
     },
     "files": [
       "src/**/*",
       "package.json",
-      "node_modules/music-metadata/**/*"
+      "THIRD_PARTY_NOTICES.md",
+      "node_modules/music-metadata/**/*",
+      "node_modules/electron-mpv-video/**/*",
+      "node_modules/node-addon-api/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "assets/mymusicplayer.ico",
+        "to": "mymusicplayer.ico"
+      },
+      {
+        "from": "assets/mycinema.ico",
+        "to": "mycinema.ico"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/electron-mpv-video/native/mpv-addon/build/Release/**/*"
+    ],
+    "npmRebuild": false,
     "win": {
       "target": "nsis",
-      "artifactName": "MyMusicPlayer-Setup-${version}.${ext}",
+      "artifactName": "MyPlayer-Setup-${version}.${ext}",
       "icon": "assets/mymusicplayer.ico"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": false
     }
   },
   "allowScripts": {

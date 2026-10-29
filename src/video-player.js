@@ -1,0 +1,229 @@
+import { defineMpvVideoElement } from '../node_modules/electron-mpv-video/dist/renderer/index.js';
+
+defineMpvVideoElement();
+
+const $ = id => document.getElementById(id);
+const video = $('video');
+const params = new URLSearchParams(location.search);
+const controls = [...document.querySelectorAll('.auto-hide')];
+let hideTimer;
+let leaveTimer;
+let progressTimer;
+let progressPending = false;
+let closing = false;
+let moving = false;
+let scrubbing = false;
+let lastAspect = 0;
+let fullscreen = false;
+
+function timeText(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor(seconds / 60);
+  if (hours) return `${hours}:${String(minutes % 60).padStart(2, '0')}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+  return `${minutes}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+}
+function showControls() {
+  clearTimeout(leaveTimer);
+  controls.forEach(control => control.classList.remove('faded'));
+  clearTimeout(hideTimer);
+  hideTimer = setTimeout(hideControls, 5000);
+}
+function hideControls() {
+  controls.forEach(control => control.classList.add('faded'));
+  $('trackMenu').classList.add('hidden');
+}
+function reportError(message) {
+  $('error').textContent = message;
+  $('error').classList.remove('hidden');
+}
+async function updateProgress() {
+  if (closing || progressPending || !video.playerId) return;
+  progressPending = true;
+  try {
+  const info = await video.getPlaybackInfo();
+  const duration = Number(info.duration) || 0;
+  const current = Number(info.currentTime) || 0;
+  setPlaying(!info.paused);
+  $('currentTime').textContent = timeText(scrubbing ? Number($('timeline').value) / 1000 * duration : current);
+  $('remainingTime').textContent = `-${timeText(Math.max(0, duration - (scrubbing ? Number($('timeline').value) / 1000 * duration : current)))}`;
+  if (!scrubbing) $('timeline').value = duration ? String(Math.round(current / duration * 1000)) : '0';
+  $('timeline').disabled = !duration;
+  } catch (error) {
+    if (!closing) reportError(`Could not read playback progress: ${error.message || error}`);
+  } finally {
+    progressPending = false;
+  }
+}
+async function openVideo(filePath, title) {
+  $('error').classList.add('hidden');
+  document.title = title || 'MyCinema';
+  $('timeline').value = '0';
+  $('currentTime').textContent = '0:00';
+  $('remainingTime').textContent = '-0:00';
+  lastAspect = 0;
+  if (progressTimer) clearInterval(progressTimer);
+  progressTimer = setInterval(updateProgress, 200);
+  try {
+    await video.open(filePath);
+    await video.play();
+  } catch (error) {
+    reportError(`Could not play this video: ${error.message || error}`);
+  }
+}
+function seekBy(seconds) {
+  video.seekRelative(seconds).catch(error => reportError(`Seek failed: ${error.message || error}`));
+  showControls();
+}
+function setPlaying(playing) {
+  $('player').classList.toggle('playing', playing);
+  $('toggle').setAttribute('aria-label', playing ? 'Pause' : 'Play');
+  $('toggle').title = playing ? 'Pause' : 'Play';
+}
+async function togglePlay() {
+  try {
+    const { paused } = await video.getPlaybackInfo();
+    if (paused) await video.play();
+    else await video.pause();
+    updateProgress();
+  } catch (error) { reportError(`Playback control failed: ${error.message || error}`); }
+  showControls();
+}
+function trackName(track, type) {
+  const title = track.title?.trim();
+  const language = track.language?.trim();
+  return title && language && title.toLowerCase() !== language.toLowerCase() ? `${title} · ${language}` : title || language || `${type === 'audio' ? 'Audio' : 'Subtitle'} track ${track.id}`;
+}
+async function showTrackMenu(type, anchor) {
+  const menu = $('trackMenu');
+  showControls();
+  menu.replaceChildren();
+  menu.classList.remove('hidden');
+  try {
+    const tracks = await video.getTracks(type);
+    const heading = document.createElement('div');
+    heading.className = 'menu-title';
+    heading.textContent = type === 'audio' ? 'Audio' : 'Subtitles';
+    menu.append(heading);
+    const options = [{ id: 'no', title: type === 'sub' ? 'Subtitles Off' : 'Audio Off', selected: tracks.every(track => !track.selected) }, ...tracks];
+    if (tracks.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = `No ${type === 'audio' ? 'audio' : 'subtitle'} tracks in this video`;
+      menu.append(empty);
+    }
+    for (const track of options) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.role = 'menuitem';
+      item.classList.toggle('selected', Boolean(track.selected));
+      item.textContent = track.id === 'no' ? track.title : trackName(track, type);
+      item.addEventListener('click', async () => {
+        try {
+          await video.selectTrack(type, String(track.id));
+          menu.classList.add('hidden');
+          showControls();
+        } catch (error) { reportError(`Could not change ${type === 'audio' ? 'audio' : 'subtitle'} track: ${error.message || error}`); }
+      });
+      menu.append(item);
+    }
+    const bounds = anchor.getBoundingClientRect();
+    menu.style.left = `${Math.min(bounds.left, innerWidth - menu.offsetWidth - 16)}px`;
+  } catch (error) {
+    reportError(`Could not read ${type === 'audio' ? 'audio' : 'subtitle'} tracks: ${error.message || error}`);
+    menu.classList.add('hidden');
+  }
+}
+async function setFullscreen(requested) {
+  try {
+    const active = await window.player.setVideoFullscreen(requested);
+    updateFullscreenUi(Boolean(active));
+    if (Boolean(active) !== requested) reportError('Windows did not enter fullscreen mode. Try the fullscreen button again.');
+  } catch (error) { reportError(`Fullscreen failed: ${error.message || error}`); }
+}
+function updateFullscreenUi(active) {
+  fullscreen = active;
+  document.documentElement.classList.toggle('fullscreen-mode', active);
+  $('fullscreen').setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen');
+  $('fullscreen').title = active ? 'Exit fullscreen' : 'Fullscreen';
+  $('fullscreen').innerHTML = active
+    ? '<svg viewBox="0 0 24 24"><path d="M9 4H4v5m16-5h-5M4 15v5h5m11-5v5h-5"/></svg>'
+    : '<svg viewBox="0 0 24 24"><path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4"/></svg>';
+}
+window.player.onVideoFullscreenChanged(active => {
+  updateFullscreenUi(active);
+});
+
+video.addEventListener('mpv-state', event => {
+  setPlaying(event.detail.status === 'Playing');
+  if (video.videoWidth && video.videoHeight) {
+    const aspect = video.videoWidth / video.videoHeight;
+    if (Math.abs(aspect - lastAspect) > 0.005) {
+      lastAspect = aspect;
+      window.player.setVideoAspect(video.videoWidth, video.videoHeight);
+    }
+  }
+  updateProgress();
+});
+video.addEventListener('mpv-error', event => reportError(`Video playback error: ${event.detail}`));
+window.player.onVideoOpen(item => openVideo(item.filePath, item.title));
+$('toggle').addEventListener('click', togglePlay);
+$('back').addEventListener('click', () => seekBy(-10));
+$('forward').addEventListener('click', () => seekBy(10));
+$('audioTrack').addEventListener('click', event => showTrackMenu('audio', event.currentTarget));
+$('subtitleTrack').addEventListener('click', event => showTrackMenu('sub', event.currentTarget));
+$('timeline').addEventListener('pointerdown', () => { scrubbing = true; });
+$('timeline').addEventListener('input', updateProgress);
+$('timeline').addEventListener('change', async () => {
+  try {
+    const { duration } = await video.getPlaybackInfo();
+    if (duration) await video.seek(Number($('timeline').value) / 1000 * duration);
+  } catch (error) { reportError(`Seek failed: ${error.message || error}`); }
+  scrubbing = false;
+  updateProgress();
+  showControls();
+});
+$('timeline').addEventListener('pointercancel', () => { scrubbing = false; updateProgress(); });
+$('volume').addEventListener('input', () => {
+  $('volumeValue').textContent = `${$('volume').value}%`;
+  video.setVolume(Number($('volume').value)).catch(error => reportError(`Volume change failed: ${error.message || error}`));
+  showControls();
+});
+$('fullscreen').addEventListener('click', () => setFullscreen(!fullscreen));
+$('player').addEventListener('dblclick', event => {
+  if (event.target.closest('button,input,label,.track-menu')) return;
+  setFullscreen(!fullscreen);
+});
+$('close').addEventListener('click', () => window.player.close());
+window.addEventListener('beforeunload', () => {
+  closing = true;
+  clearInterval(progressTimer);
+  clearTimeout(hideTimer);
+  clearTimeout(leaveTimer);
+});
+document.addEventListener('mousemove', () => {
+  if (moving) return;
+  moving = true;
+  requestAnimationFrame(() => { moving = false; });
+  showControls();
+});
+document.addEventListener('mouseenter', showControls);
+document.addEventListener('mouseleave', () => {
+  clearTimeout(hideTimer);
+  leaveTimer = setTimeout(hideControls, 250);
+});
+document.addEventListener('click', event => {
+  if (!event.target.closest('#trackMenu, #audioTrack, #subtitleTrack')) $('trackMenu').classList.add('hidden');
+});
+document.addEventListener('keydown', event => {
+  if (event.code === 'Space') { event.preventDefault(); togglePlay(); }
+  if (event.code === 'ArrowLeft') seekBy(-10);
+  if (event.code === 'ArrowRight') seekBy(10);
+  if (event.code === 'Escape') setFullscreen(false);
+  showControls();
+});
+
+const initialPath = params.get('filePath');
+if (initialPath) openVideo(initialPath, params.get('title'));
+updateProgress();
+showControls();
