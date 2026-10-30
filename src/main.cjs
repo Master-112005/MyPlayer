@@ -189,6 +189,18 @@ ipcMain.handle('scan-folder', async (_event, folder) => {
   if (typeof folder !== 'string') return [];
   return scanFolder(folder);
 });
+ipcMain.handle('track-search-info', async (_event, filePath) => {
+  if (typeof filePath !== 'string') return null;
+  try {
+    const { parseFile } = await import('music-metadata');
+    const { common } = await parseFile(filePath, { skipCovers: true, duration: false });
+    return {
+      title: common.title || '', artist: common.artist || common.albumartist || '', album: common.album || '',
+      genre: Array.isArray(common.genre) ? common.genre.join(' ') : '', composer: Array.isArray(common.composer) ? common.composer.join(' ') : common.composer || '',
+      year: common.year || '', lyrics: Array.isArray(common.lyrics) ? common.lyrics.map(item => typeof item === 'string' ? item : item?.text || '').join(' ') : ''
+    };
+  } catch { return null; }
+});
 async function scanVideoFolder(folder) {
   const videos = [];
   const pending = [folder];

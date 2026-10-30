@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('player', {
   chooseFolder: () => ipcRenderer.invoke('choose-folder'),
   scanFolder: folder => ipcRenderer.invoke('scan-folder', folder),
   getTrackInfo: filePath => ipcRenderer.invoke('track-info', filePath),
+  getTrackSearchInfo: filePath => ipcRenderer.invoke('track-search-info', filePath),
   chooseVideoFolder: () => ipcRenderer.invoke('choose-video-folder'),
   scanVideoFolder: folder => ipcRenderer.invoke('scan-video-folder', folder),
   openVideoWindow: (filePath, title) => ipcRenderer.invoke('open-video-window', filePath, title),

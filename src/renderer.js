@@ -30,6 +30,11 @@ let selectedPlaylistId = null;
 let playbackPaths = null;
 let playbackSource = null;
 let queueReturnToPlayer = false;
+let searchMetadataSource = null;
+let searchMetadataTask = null;
+let searchIndexing = false;
+let searchRenderTimer;
+const searchFieldCache = new WeakMap();
 let trackToAdd = null;
 let selectedPlaylistIds = new Set();
 let playlists = [];
@@ -284,10 +289,11 @@ function showPlayer() {
 function savePlaylists() { localStorage.setItem('playlists', JSON.stringify(playlists)); }
 function openSearch() {
   if (homeView === 'search' && ui.queuePanel.classList.contains('search-open')) {
-    ui.searchInput.focus(); return;
+    void indexSearchMetadata(); ui.searchInput.focus(); return;
   }
   showHome('search');
-  ui.homeSearch.classList.remove('hidden'); ui.queuePanel.classList.add('search-open'); requestAnimationFrame(() => ui.searchInput.focus());
+  ui.homeSearch.classList.remove('hidden'); ui.queuePanel.classList.add('search-open');
+  void indexSearchMetadata(); requestAnimationFrame(() => ui.searchInput.focus());
 }
 function addTrackToPlaylist(path) {
   if (!playlists.length) { showToast('Create a playlist first'); return; }
@@ -337,6 +343,24 @@ function saveTrackOrder() { if (folder) localStorage.setItem(orderKey(), JSON.st
 function normalizeSearch(value) {
   return String(value || '').normalize('NFKD').replace(/\p{M}/gu, '').toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
 }
+function parseMusicSearch(value) {
+  const fieldAliases = { track: 'track', title: 'track', song: 'track', artist: 'artist', album: 'album', genre: 'genre', year: 'year', composer: 'composer', lyrics: 'lyrics' };
+  const clauses = [];
+  const tokens = String(value || '').match(/-?(?:(?:track|title|song|artist|album|genre|year|composer|lyrics):)?-?(?:"[^"]*"|'[^']*'|[^\s]+)/giu) || [];
+  for (let raw of tokens) {
+    let exclude = raw.startsWith('-');
+    if (exclude) raw = raw.slice(1);
+    let field = null;
+    const prefix = raw.match(/^(track|title|song|artist|album|genre|year|composer|lyrics):/i);
+    if (prefix) { field = fieldAliases[prefix[1].toLocaleLowerCase()]; raw = raw.slice(prefix[0].length); }
+    if (raw.startsWith('-')) { exclude = true; raw = raw.slice(1); }
+    const phrase = (raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"));
+    const text = phrase ? raw.slice(1, -1) : raw;
+    const words = normalizeSearch(text);
+    if (words.length) clauses.push({ field, words, phrase, exclude });
+  }
+  return clauses;
+}
 function damerauDistance(left, right, limit) {
   const a = Array.from(left), b = Array.from(right);
   if (Math.abs(a.length - b.length) > limit) return Infinity;
@@ -353,32 +377,78 @@ function damerauDistance(left, right, limit) {
 }
 function searchTermScore(queryWord, fields) {
   let best = Infinity;
-  for (const [text, weight] of fields) {
-    if (!text) continue;
-    const words = normalizeSearch(text);
-    const normalized = words.join(' ');
-    if (words.includes(queryWord) || normalized === queryWord) best = Math.min(best, weight);
-    else if (words.some(word => word.startsWith(queryWord))) best = Math.min(best, 20 + weight);
-    else if (normalized.includes(queryWord)) best = Math.min(best, 25 + weight);
-    const maxDistance = queryWord.length >= 9 ? 2 : queryWord.length >= 5 ? 1 : 0;
+  for (const { words, weight } of fields) {
+    if (!words.length) continue;
+    if (words.includes(queryWord)) best = Math.min(best, weight);
+    else if (words.some(word => word.startsWith(queryWord))) best = Math.min(best, 3 + weight);
+    else if (queryWord.length >= 3 && words.some(word => word.includes(queryWord))) best = Math.min(best, 9 + weight);
+    const maxDistance = queryWord.length >= 8 ? 2 : queryWord.length >= 4 ? 1 : 0;
     for (const word of words) {
       if (!maxDistance || Math.abs(word.length - queryWord.length) > maxDistance) continue;
       const distance = damerauDistance(queryWord, word, maxDistance);
-      if (distance <= maxDistance) best = Math.min(best, 40 + distance * 10 + weight);
+      if (distance <= maxDistance) best = Math.min(best, 28 + distance * 12 + weight);
     }
   }
   return best;
 }
-function scoreTrackSearch(track, queryWords) {
-  const title = track.title || track.filename.replace(/\.[^.]+$/, '');
-  const fields = [[title, 0], [track.filename, 1], [track.artist, 3], [track.album, 6]];
+function trackSearchFields(track, field = null) {
+  let fields = searchFieldCache.get(track);
+  if (!fields) {
+    const title = track.title || track.filename.replace(/\.[^.]+$/, '');
+    fields = [
+      { text: title, weight: 0, kind: 'track' }, { text: track.filename, weight: 2, kind: 'track' },
+      { text: track.artist, weight: 4, kind: 'artist' }, { text: track.album, weight: 6, kind: 'album' },
+      { text: track.composer, weight: 9, kind: 'composer' }, { text: track.genre, weight: 11, kind: 'genre' },
+      { text: track.year, weight: 7, kind: 'year' }, { text: track.lyrics, weight: 20, kind: 'lyrics' }
+    ].map(item => { const words = normalizeSearch(item.text); return { ...item, words, normalized: words.join(' ') }; });
+    searchFieldCache.set(track, fields);
+  }
+  return fields.filter(item => !field || item.kind === field);
+}
+function scoreSearchClause(track, clause) {
+  const fields = trackSearchFields(track, clause.field);
+  if (!fields.length) return Infinity;
+  if (clause.phrase) {
+    const phrase = clause.words.join(' ');
+    for (const field of fields) {
+      if (field.normalized.includes(phrase)) return field.weight - 8;
+    }
+  }
+  return clause.words.reduce((sum, word) => {
+    const term = searchTermScore(word, fields);
+    return Number.isFinite(sum) && Number.isFinite(term) ? sum + term : Infinity;
+  }, 0);
+}
+function scoreTrackSearch(track, clauses) {
   let score = 0;
-  for (const word of queryWords) {
-    const termScore = searchTermScore(word, fields);
-    if (!Number.isFinite(termScore)) return Infinity;
-    score += termScore;
+  for (const clause of clauses) {
+    const clauseScore = scoreSearchClause(track, clause);
+    if (clause.exclude) { if (Number.isFinite(clauseScore)) return Infinity; continue; }
+    if (!Number.isFinite(clauseScore)) return Infinity;
+    score += clauseScore;
   }
   return score;
+}
+function indexSearchMetadata() {
+  const source = tracks;
+  if (!source.length) return Promise.resolve();
+  if (searchMetadataSource === source && searchMetadataTask) return searchMetadataTask;
+  searchMetadataSource = source;
+  searchIndexing = true;
+  let cursor = 0, indexed = 0;
+  searchMetadataTask = Promise.all(Array.from({ length: Math.min(3, source.length) }, async () => {
+    while (cursor < source.length) {
+      const track = source[cursor++];
+      if (track.searchIndexed) continue;
+      try { Object.assign(track, await window.player.getTrackSearchInfo(track.path) || {}); } catch {}
+      searchFieldCache.delete(track);
+      track.searchIndexed = true;
+      if (++indexed % 24 === 0 && tracks === source) renderQueue();
+    }
+  })).then(() => {
+    if (tracks === source) { searchIndexing = false; renderQueue(); }
+  });
+  return searchMetadataTask;
 }
 function renderQueue() {
   ui.queueList.replaceChildren();
@@ -388,9 +458,9 @@ function renderQueue() {
     const order = new Map(playbackPaths.map((path, position) => [path, position]));
     visibleTracks = [...visibleTracks].sort((a, b) => (order.get(a.path) ?? Infinity) - (order.get(b.path) ?? Infinity));
   }
-  const queryWords = normalizeSearch(ui.searchInput.value);
-  const matches = homeView === 'search' && !queryWords.length ? [] : visibleTracks.map((track, position) => ({ track, index: tracks.indexOf(track), position, score: scoreTrackSearch(track, queryWords) })).filter(item => Number.isFinite(item.score));
-  if (queryWords.length) matches.sort((a, b) => a.score - b.score || a.position - b.position);
+  const queryClauses = parseMusicSearch(ui.searchInput.value);
+  const matches = homeView === 'search' && !queryClauses.length ? [] : visibleTracks.map((track, position) => ({ track, index: tracks.indexOf(track), position, score: scoreTrackSearch(track, queryClauses) })).filter(item => Number.isFinite(item.score));
+  if (queryClauses.length) matches.sort((a, b) => a.score - b.score || a.position - b.position);
   let shown = 0;
   matches.forEach(({ track, index }) => {
     shown++;
@@ -458,7 +528,7 @@ function renderQueue() {
     });
     ui.queueList.append(row);
   });
-  if (!shown) { const empty = document.createElement('div'); empty.className = 'queue-empty'; empty.textContent = homeView === 'search' && !queryWords.length ? 'Search by song, artist, or album' : queryWords.length ? 'No matching songs' : homeView === 'favorites' ? 'Your favorite songs will appear here' : !tracks.length ? 'Choose a folder to add songs' : playlist ? 'This playlist is empty. Add songs from All Songs.' : 'Choose a folder to add songs'; ui.queueList.append(empty); }
+  if (!shown) { const empty = document.createElement('div'); empty.className = 'queue-empty'; empty.textContent = homeView === 'search' && !queryClauses.length ? 'Search by song, artist, album, genre, or lyrics' : homeView === 'search' && searchIndexing ? 'Checking song details…' : queryClauses.length ? 'No matching songs' : homeView === 'favorites' ? 'Your favorite songs will appear here' : !tracks.length ? 'Choose a folder to add songs' : playlist ? 'This playlist is empty. Add songs from All Songs.' : 'Choose a folder to add songs'; ui.queueList.append(empty); }
 }
 function updateFavorite() {
   const path = tracks[currentIndex]?.path;
@@ -520,6 +590,7 @@ async function playTrack(index, autoplay = true) {
     track.title = info?.title || track.filename.replace(/\.[^.]+$/, '');
     track.artist = info?.artist || 'Unknown artist';
     track.album = info?.album || '';
+    searchFieldCache.delete(track);
     if (request === trackRequest) {
       ui.trackTitle.textContent = track.title;
       ui.trackArtist.textContent = info?.album ? `${track.artist}  ·  ${info.album}` : track.artist;
@@ -664,7 +735,11 @@ ui.shuffleButton.addEventListener('click', () => {
   showToast(shuffle ? 'Shuffle is on' : 'Shuffle is off');
 });
 ui.searchButton.addEventListener('click', openSearch);
-ui.searchInput.addEventListener('input', renderQueue);
+ui.searchInput.addEventListener('input', () => {
+  clearTimeout(searchRenderTimer);
+  searchRenderTimer = setTimeout(renderQueue, 90);
+  void indexSearchMetadata();
+});
 ui.queueButton.addEventListener('click', () => {
   if (playbackSource?.type === 'playlist') showHome('playlist', playbackSource.id, true);
   else showHome(playbackSource?.type === 'favorites' ? 'favorites' : 'all', null, true);
