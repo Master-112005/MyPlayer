@@ -198,3 +198,9 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus::-webkit-s
 .scroll-edge-fade{-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 var(--scroll-fade-top),#000 calc(100% - var(--scroll-fade-bottom)),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,#000 var(--scroll-fade-top),#000 calc(100% - var(--scroll-fade-bottom)),transparent 100%);transition:--scroll-fade-top 160ms ease-out,--scroll-fade-bottom 160ms ease-out}
 .home-shortcuts:not(.scroll-edge-fade){-webkit-mask-image:none;mask-image:none}
 @media(prefers-reduced-motion:reduce){.scroll-edge-fade{transition:none}}
+
+/* Swap the hover actions: playback overlays the square art tile; favorite sits at row end. */
+.queue-index-cell .queue-play{z-index:3;width:31px;height:31px;flex:none}
+.queue-favorite{width:31px;height:31px;flex:0 0 31px}
+.queue-play{color:#fff;box-shadow:none}
+.queue-play svg{fill:currentColor;filter:none}
