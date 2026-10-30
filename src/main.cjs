@@ -84,7 +84,7 @@ function createWindow(mode) {
   const iconName = cinema ? 'mycinema.ico' : 'mymusicplayer.ico';
   mainWindow = new BrowserWindow({
     width: cinema ? 700 : 350, height: 600, minWidth: cinema ? 620 : 320, minHeight: cinema ? 500 : 550,
-    maxWidth: cinema ? 1100 : 430, maxHeight: cinema ? 850 : 740, show: false, frame: false,
+    maxWidth: cinema ? 1100 : 430, maxHeight: cinema ? 850 : 740, show: false, frame: false, roundedCorners: true,
     transparent: true, backgroundColor: '#00000000', resizable: true,
     title: cinema ? 'MyCinema' : 'MyMusic',
     icon: app.isPackaged ? path.join(process.resourcesPath, iconName) : path.join(__dirname, '..', 'assets', iconName),
@@ -92,7 +92,17 @@ function createWindow(mode) {
   });
   attachMpvWindow(mainWindow);
   mainWindow.loadFile(path.join(__dirname, 'index.html'), { query: { app: mode, ...(startupFileType === 'audio' ? { filePath: startupFilePath } : {}) } });
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.once('ready-to-show', () => { positionMainWindow('normal'); mainWindow.show(); });
+}
+
+function positionMainWindow(mode, width, height) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const area = screen.getDisplayMatching(mainWindow.getBounds()).workArea;
+  const [currentWidth, currentHeight] = mainWindow.getSize();
+  width ??= currentWidth; height ??= currentHeight;
+  const x = area.x + Math.round((area.width - width) / 2);
+  const y = mode === 'mini' ? area.y + 18 : area.y + Math.round((area.height - height) / 2);
+  mainWindow.setPosition(x, y);
 }
 
 function createVideoWindow(filePath, title) {
@@ -329,15 +339,13 @@ ipcMain.handle('set-mini-mode', (_event, mini) => {
   if (!mainWindow || typeof mini !== 'boolean') return false;
   const width = mini ? 440 : 350;
   const height = mini ? 140 : 600;
-  const area = screen.getDisplayMatching(mainWindow.getBounds()).workArea;
-  const [x, y] = mainWindow.getPosition();
   mainWindow.setAlwaysOnTop(mini);
   mainWindow.setMaximizable(!mini);
   mainWindow.setResizable(!mini);
   mainWindow.setMinimumSize(mini ? 400 : 320, mini ? 128 : 550);
   mainWindow.setMaximumSize(mini ? 560 : 430, mini ? 180 : 740);
   mainWindow.setSize(width, height);
-  mainWindow.setPosition(Math.max(area.x, Math.min(x, area.x + area.width - width)), Math.max(area.y, Math.min(y, area.y + area.height - height)));
+  positionMainWindow(mini ? 'mini' : 'normal', width, height);
   return mini;
 });
 ipcMain.on('window-close', event => {

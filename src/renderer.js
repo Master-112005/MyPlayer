@@ -4,12 +4,12 @@ const ui = {
   searchButton: $('searchButton'), searchInput: $('searchInput'), modeToggle: $('modeToggle'), minimizeButton: $('minimizeButton'), closeButton: $('closeButton'),
   playButton: $('playButton'), previousButton: $('previousButton'), nextButton: $('nextButton'),
   shuffleButton: $('shuffleButton'), queueButton: $('queueButton'), homeButton: $('homeButton'),
-  favoriteButton: $('favoriteButton'), seekBar: $('seekBar'), volumeBar: $('volumeBar'),
+  favoriteButton: $('favoriteButton'), seekBar: $('seekBar'), volumeBar: $('volumeBar'), volumeMuteButton: $('volumeMuteButton'),
   volumeValue: $('volumeValue'), currentTime: $('currentTime'), duration: $('duration'),
   trackTitle: $('trackTitle'), trackArtist: $('trackArtist'), trackCount: $('trackCount'), libraryLabel: $('libraryLabel'),
   artwork: $('artwork'), artworkWrap: $('artworkWrap'), queuePanel: $('queuePanel'), queueList: $('queueList'),
   toast: $('toast'), homeTitle: $('homeTitle'), homeShortcuts: $('homeShortcuts'), homeLibrary: $('homeLibrary'), settingsView: $('settingsView'),
-  playlistGrid: $('playlistGrid'), homeSongCount: $('homeSongCount'), favoriteSongCount: $('favoriteSongCount'), settingsPlaylistList: $('settingsPlaylistList'), homeNotes: $('homeNotes'), colorNotesToggle: $('colorNotesToggle'), homeSearchButton: $('homeSearchButton'), homeCreatePlaylistButton: $('homeCreatePlaylistButton'), homeSettingsButton: $('homeSettingsButton'), homeHomeButton: $('homeHomeButton'), homeCloseButton: $('homeCloseButton'), homeMinimizeButton: $('homeMinimizeButton'), settingsFolderButton: $('settingsFolderButton'), settingsRescanButton: $('settingsRescanButton'), defaultAudioButton: $('defaultAudioButton'),
+  playlistGrid: $('playlistGrid'), homeSongCount: $('homeSongCount'), favoriteSongCount: $('favoriteSongCount'), settingsPlaylistList: $('settingsPlaylistList'), homeNotes: $('homeNotes'), colorNotesToggle: $('colorNotesToggle'), homeSearch: document.querySelector('.home-search'), homeSearchButton: $('homeSearchButton'), homeCreatePlaylistButton: $('homeCreatePlaylistButton'), homeSettingsButton: $('homeSettingsButton'), homeHomeButton: $('homeHomeButton'), playlistBackButton: $('playlistBackButton'), homeCloseButton: $('homeCloseButton'), homeMinimizeButton: $('homeMinimizeButton'), settingsFolderButton: $('settingsFolderButton'), settingsRescanButton: $('settingsRescanButton'), defaultAudioButton: $('defaultAudioButton'),
   allSongsCard: $('allSongsCard'), favoritesCard: $('favoritesCard'), playlistDialog: $('playlistDialog'), playlistForm: $('playlistForm'), miniEdgeColorToggle: $('miniEdgeColorToggle'), settingsColorToggle: $('settingsColorToggle'), settingsColorOptions: $('settingsColorOptions'), settingsPlaylistToggle: $('settingsPlaylistToggle'),
   playlistName: $('playlistName'), cancelPlaylist: $('cancelPlaylist'), addPlaylistDialog: $('addPlaylistDialog'), addPlaylistForm: $('addPlaylistForm'), playlistChoices: $('playlistChoices'), cancelAddPlaylist: $('cancelAddPlaylist'), confirmationDialog: $('confirmationDialog'), confirmationTitle: $('confirmationTitle'), confirmationMessage: $('confirmationMessage'), nowPlayingPlay: $('nowPlayingPlay'),
   nowPlayingBar: $('nowPlayingBar'), nowPlayingTitle: $('nowPlayingTitle'), nowPlayingArtist: $('nowPlayingArtist'), nowPlayingArt: $('nowPlayingArt')
@@ -29,6 +29,7 @@ let homeView = 'home';
 let selectedPlaylistId = null;
 let playbackPaths = null;
 let playbackSource = null;
+let queueReturnToPlayer = false;
 let trackToAdd = null;
 let selectedPlaylistIds = new Set();
 let playlists = [];
@@ -74,6 +75,36 @@ function setPlaying(playing) {
   ui.nowPlayingPlay.setAttribute('aria-label', playing ? 'Pause' : 'Play');
 }
 function paintRange(input, percent) { input.style.setProperty('--progress', `${Math.max(0, Math.min(100, percent))}%`); }
+function setSeekValue(value) {
+  const clamped = Math.max(0, Math.min(1000, Math.round(value)));
+  ui.seekBar.value = String(clamped);
+  ui.seekBar.setAttribute('aria-valuenow', String(clamped));
+  paintRange(ui.seekBar, clamped / 10);
+}
+function sourceTrackPaths() {
+  if (playbackSource?.type === 'playlist') return playlists.find(item => item.id === playbackSource.id)?.tracks || [];
+  if (playbackSource?.type === 'favorites') return tracks.filter(track => favorites.has(track.path)).map(track => track.path);
+  return tracks.map(track => track.path);
+}
+function setPlaybackPaths(paths, firstPath = tracks[currentIndex]?.path) {
+  const available = [...new Set(paths)].filter(path => tracks.some(track => track.path === path));
+  if (shuffle && available.length > 1) {
+    for (let i = available.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [available[i], available[j]] = [available[j], available[i]];
+    }
+    const first = available.indexOf(firstPath);
+    if (first > 0) available.unshift(...available.splice(first, 1));
+  }
+  playbackPaths = available;
+}
+function setMuted(muted) {
+  audio.muted = muted;
+  ui.volumeMuteButton.classList.toggle('muted', muted);
+  ui.volumeMuteButton.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
+  ui.volumeMuteButton.title = muted ? 'Unmute' : 'Mute';
+  localStorage.setItem('muted', String(muted));
+}
 function setMiniEdgeColor(rgb) {
   if (rgb) artworkEdgeRgb = rgb;
   document.querySelector('.window-shell').style.setProperty('--mini-edge-rgb', coloredMiniEdges ? artworkEdgeRgb : '255,255,255');
@@ -224,21 +255,25 @@ function renderPlaylists() {
     row.append(playlistName, remove); ui.settingsPlaylistList.append(row);
   }
 }
-function showHome(view = 'home', playlistId = null) {
-  homeView = view; selectedPlaylistId = playlistId;
+function showHome(view = 'home', playlistId = null, returnToPlayer = false) {
+  homeView = view; selectedPlaylistId = playlistId; queueReturnToPlayer = returnToPlayer;
   const playlist = playlists.find(item => item.id === playlistId);
   const shell = document.querySelector('.window-shell');
   shell.classList.add('home-open'); shell.classList.remove('player-open');
   ui.queuePanel.classList.add('open'); ui.queuePanel.setAttribute('aria-hidden', 'false');
   ui.homeShortcuts.classList.toggle('hidden', view !== 'home');
   ui.homeCreatePlaylistButton.classList.toggle('hidden', view !== 'home');
-  ui.homeLibrary.classList.toggle('hidden', !['all', 'playlist', 'favorites'].includes(view));
+  ui.homeLibrary.classList.toggle('hidden', !['all', 'playlist', 'favorites', 'search'].includes(view));
   ui.settingsView.classList.toggle('hidden', view !== 'settings');
   ui.homeHomeButton.classList.toggle('hidden', view === 'home');
+  const canGoBack = ['playlist', 'favorites', 'all'].includes(view);
+  ui.playlistBackButton.classList.toggle('hidden', !canGoBack);
+  ui.playlistBackButton.title = queueReturnToPlayer ? 'Back to player' : 'Back to home';
+  ui.playlistBackButton.setAttribute('aria-label', queueReturnToPlayer ? 'Back to player' : 'Back to home');
   ui.homeSettingsButton.classList.toggle('hidden', view === 'settings');
   ui.homeLibrary.classList.toggle('all-songs-view', view === 'all');
-  ui.homeTitle.textContent = view === 'playlist' ? playlist?.name || 'Playlist' : view === 'favorites' ? 'Favorites' : view === 'settings' ? 'Settings' : view === 'all' ? 'All Songs' : 'Home';
-  ui.queuePanel.classList.remove('search-open');
+  ui.homeTitle.textContent = view === 'playlist' ? playlist?.name || 'Playlist' : view === 'favorites' ? 'Favorites' : view === 'settings' ? 'Settings' : view === 'search' ? 'Search' : view === 'all' ? 'All Songs' : 'Home';
+  ui.queuePanel.classList.remove('search-open'); ui.homeSearch.classList.add('hidden');
   ui.searchInput.value = ''; renderPlaylists(); renderQueue();
 }
 function showPlayer() {
@@ -248,12 +283,11 @@ function showPlayer() {
 }
 function savePlaylists() { localStorage.setItem('playlists', JSON.stringify(playlists)); }
 function openSearch() {
-  if (ui.queuePanel.classList.contains('open') && ui.queuePanel.classList.contains('search-open')) {
-    ui.queuePanel.classList.remove('search-open'); ui.searchInput.value = ''; renderQueue(); return;
+  if (homeView === 'search' && ui.queuePanel.classList.contains('search-open')) {
+    ui.searchInput.focus(); return;
   }
-  if (homeView === 'home' || homeView === 'settings') showHome('all');
-  else showHome(homeView, selectedPlaylistId);
-  ui.queuePanel.classList.add('search-open'); requestAnimationFrame(() => ui.searchInput.focus());
+  showHome('search');
+  ui.homeSearch.classList.remove('hidden'); ui.queuePanel.classList.add('search-open'); requestAnimationFrame(() => ui.searchInput.focus());
 }
 function addTrackToPlaylist(path) {
   if (!playlists.length) { showToast('Create a playlist first'); return; }
@@ -275,7 +309,7 @@ function removeTrackFromPlaylist(path) {
   const playlist = playlists.find(item => item.id === selectedPlaylistId);
   if (!playlist) return;
   playlist.tracks = playlist.tracks.filter(item => item !== path);
-  if (playbackSource?.type === 'playlist' && playbackSource.id === playlist.id) playbackPaths = [...playlist.tracks];
+  if (playbackSource?.type === 'playlist' && playbackSource.id === playlist.id) setPlaybackPaths(playlist.tracks);
   savePlaylists(); updatePlaybackHeader(); renderPlaylists(); renderQueue(); showToast(`Removed from ${playlist.name}`);
 }
 function populateMusicNotes() {
@@ -349,18 +383,26 @@ function scoreTrackSearch(track, queryWords) {
 function renderQueue() {
   ui.queueList.replaceChildren();
   const playlist = homeView === 'playlist' ? playlists.find(item => item.id === selectedPlaylistId) : null;
-  const visibleTracks = playlist ? playlist.tracks.map(path => tracks.find(track => track.path === path)).filter(Boolean) : homeView === 'favorites' ? tracks.filter(track => favorites.has(track.path)) : tracks;
+  let visibleTracks = playlist ? playlist.tracks.map(path => tracks.find(track => track.path === path)).filter(Boolean) : homeView === 'favorites' ? tracks.filter(track => favorites.has(track.path)) : tracks;
+  if (shuffle && playbackPaths?.length && ((homeView === 'playlist' && playbackSource?.type === 'playlist' && playbackSource.id === playlist?.id) || (homeView === 'favorites' && playbackSource?.type === 'favorites') || (homeView === 'all' && playbackSource?.type === 'all'))) {
+    const order = new Map(playbackPaths.map((path, position) => [path, position]));
+    visibleTracks = [...visibleTracks].sort((a, b) => (order.get(a.path) ?? Infinity) - (order.get(b.path) ?? Infinity));
+  }
   const queryWords = normalizeSearch(ui.searchInput.value);
-  const matches = visibleTracks.map(track => ({ track, index: tracks.indexOf(track), score: scoreTrackSearch(track, queryWords) })).filter(item => Number.isFinite(item.score));
-  if (queryWords.length) matches.sort((a, b) => a.score - b.score || a.index - b.index);
+  const matches = homeView === 'search' && !queryWords.length ? [] : visibleTracks.map((track, position) => ({ track, index: tracks.indexOf(track), position, score: scoreTrackSearch(track, queryWords) })).filter(item => Number.isFinite(item.score));
+  if (queryWords.length) matches.sort((a, b) => a.score - b.score || a.position - b.position);
   let shown = 0;
   matches.forEach(({ track, index }) => {
     shown++;
     const row = document.createElement('div');
     row.className = 'queue-item' + (index === currentIndex ? ' current' : '');
-    row.draggable = homeView === 'all'; row.dataset.index = String(index); row.title = homeView === 'all' ? 'Drag to reorder' : '';
+    row.draggable = homeView === 'all' && !shuffle; row.dataset.index = String(index); row.title = row.draggable ? 'Drag to reorder' : '';
     const indexCell = document.createElement('span'); indexCell.className = 'queue-index-cell';
-    const number = document.createElement('span'); number.className = 'queue-number'; number.textContent = index === currentIndex && !audio.paused ? String.fromCharCode(9835) : String(visibleTracks.indexOf(track) + 1).padStart(2, '0');
+    const number = document.createElement('span'); number.className = 'queue-number';
+    if (index === currentIndex && !audio.paused) {
+      number.innerHTML = '<svg class="now-playing-wave" viewBox="0 0 18 18" aria-hidden="true"><rect x="2" y="7" width="2" height="4" rx="1"/><rect x="6" y="4" width="2" height="10" rx="1"/><rect x="10" y="2" width="2" height="14" rx="1"/><rect x="14" y="6" width="2" height="6" rx="1"/></svg>';
+      number.setAttribute('aria-label', 'Now playing');
+    } else number.textContent = String(visibleTracks.indexOf(track) + 1).padStart(2, '0');
     const favorite = document.createElement('button'); favorite.type = 'button'; favorite.className = 'queue-favorite' + (favorites.has(track.path) ? ' active' : ''); favorite.title = favorites.has(track.path) ? 'Remove from favorites' : 'Add to favorites'; favorite.setAttribute('aria-label', favorite.title); favorite.setAttribute('aria-pressed', String(favorites.has(track.path)));
     favorite.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 8.8c0 4.2-8.8 10.2-8.8 10.2S3.2 13 3.2 8.8A4.4 4.4 0 0 1 12 7.4a4.4 4.4 0 0 1 8.8 1.4Z"/></svg>';
     indexCell.append(number, favorite);
@@ -394,7 +436,8 @@ function renderQueue() {
     const playFromList = () => {
       if (suppressRowClick) { suppressRowClick = false; return; }
       playbackSource = playlist ? { type: 'playlist', id: playlist.id } : homeView === 'favorites' ? { type: 'favorites' } : { type: 'all' };
-      playbackPaths = playlist ? [...playlist.tracks] : homeView === 'favorites' ? visibleTracks.map(item => item.path) : null; playTrack(Number(row.dataset.index));
+      const paths = playlist ? playlist.tracks : homeView === 'favorites' ? visibleTracks.map(item => item.path) : tracks.map(item => item.path);
+      setPlaybackPaths(paths, track.path); renderQueue(); playTrack(Number(row.dataset.index));
     };
     play.addEventListener('click', () => { showPlayer(); playFromList(); });
     playButton.addEventListener('click', playFromList);
@@ -415,7 +458,7 @@ function renderQueue() {
     });
     ui.queueList.append(row);
   });
-  if (!shown) { const empty = document.createElement('div'); empty.className = 'queue-empty'; empty.textContent = queryWords.length ? 'No matching songs' : homeView === 'favorites' ? 'Your favorite songs will appear here' : !tracks.length ? 'Choose a folder to add songs' : playlist ? 'This playlist is empty. Add songs from All Songs.' : 'Choose a folder to add songs'; ui.queueList.append(empty); }
+  if (!shown) { const empty = document.createElement('div'); empty.className = 'queue-empty'; empty.textContent = homeView === 'search' && !queryWords.length ? 'Search by song, artist, or album' : queryWords.length ? 'No matching songs' : homeView === 'favorites' ? 'Your favorite songs will appear here' : !tracks.length ? 'Choose a folder to add songs' : playlist ? 'This playlist is empty. Add songs from All Songs.' : 'Choose a folder to add songs'; ui.queueList.append(empty); }
 }
 function updateFavorite() {
   const path = tracks[currentIndex]?.path;
@@ -459,6 +502,7 @@ function resetArtwork() {
 async function playTrack(index, autoplay = true) {
   if (!tracks.length) { showToast('Choose a music folder first'); return; }
   if (!playbackSource) playbackSource = { type: 'all' };
+  if (!playbackPaths && shuffle) setPlaybackPaths(sourceTrackPaths(), tracks[(index + tracks.length) % tracks.length]?.path);
   currentIndex = (index + tracks.length) % tracks.length;
   const track = tracks[currentIndex];
   localStorage.setItem('lastPlayedTrack', track.path);
@@ -509,13 +553,10 @@ async function rescan() {
 function moveTrack(direction) {
   if (!tracks.length) { showToast('Choose a music folder first'); return; }
   if (currentIndex < 0) return playTrack(0);
+  if (!playbackPaths) setPlaybackPaths(sourceTrackPaths());
   const sequence = playbackPaths?.filter(path => tracks.some(track => track.path === path)) || tracks.map(track => track.path);
   const current = sequence.indexOf(tracks[currentIndex].path);
   if (current < 0) return playTrack(0);
-  if (shuffle && sequence.length > 1) {
-    let next; do { next = Math.floor(Math.random() * sequence.length); } while (next === current);
-    return playTrack(tracks.findIndex(track => track.path === sequence[next]));
-  }
   return playTrack(tracks.findIndex(track => track.path === sequence[(current + direction + sequence.length) % sequence.length]));
 }
 ui.settingsFolderButton.addEventListener('click', selectFolder);
@@ -594,14 +635,20 @@ ui.playButton.addEventListener('click', async () => {
 window.addEventListener('keydown', event => {
   if (document.documentElement.dataset.appMode !== 'music' || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || document.querySelector('dialog[open]')) return;
   const target = event.target;
-  if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [contenteditable="true"]'))) return;
+  if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input:not([type="range"]), textarea, select, [contenteditable="true"]'))) return;
   if (event.code === 'Space') {
     if (target instanceof HTMLElement && target.closest('button')) return;
     event.preventDefault(); ui.playButton.click();
+  } else if (event.code === 'ArrowUp' || event.code === 'ArrowDown') {
+    event.preventDefault();
+    ui.volumeBar.value = String(Math.max(0, Math.min(100, Number(ui.volumeBar.value) + (event.code === 'ArrowUp' ? 2 : -2))));
+    ui.volumeBar.dispatchEvent(new Event('input', { bubbles: true }));
   } else if (event.code === 'ArrowLeft') {
     event.preventDefault(); ui.previousButton.click();
   } else if (event.code === 'ArrowRight') {
     event.preventDefault(); ui.nextButton.click();
+  } else if (event.code === 'KeyM') {
+    event.preventDefault(); setMuted(!audio.muted);
   }
 });
 ui.previousButton.addEventListener('click', () => {
@@ -612,26 +659,63 @@ ui.nextButton.addEventListener('click', () => moveTrack(1));
 ui.shuffleButton.addEventListener('click', () => {
   shuffle = !shuffle; localStorage.setItem('shuffle', String(shuffle)); ui.shuffleButton.classList.toggle('active', shuffle);
   ui.shuffleButton.setAttribute('aria-pressed', String(shuffle));
+  if (playbackSource) setPlaybackPaths(sourceTrackPaths());
+  renderQueue();
   showToast(shuffle ? 'Shuffle is on' : 'Shuffle is off');
 });
 ui.searchButton.addEventListener('click', openSearch);
 ui.searchInput.addEventListener('input', renderQueue);
-ui.queueButton.addEventListener('click', () => showHome('all'));
+ui.queueButton.addEventListener('click', () => {
+  if (playbackSource?.type === 'playlist') showHome('playlist', playbackSource.id, true);
+  else showHome(playbackSource?.type === 'favorites' ? 'favorites' : 'all', null, true);
+});
+ui.playlistBackButton.addEventListener('click', () => {
+  if (queueReturnToPlayer) showPlayer();
+  else showHome();
+});
 ui.favoriteButton.addEventListener('click', () => {
   const file = tracks[currentIndex]?.path;
   if (!file) return showToast('Play a song to save it as a favorite');
   if (favorites.has(file)) favorites.delete(file); else favorites.add(file);
   localStorage.setItem('favorites', JSON.stringify([...favorites])); updatePlaybackHeader(); updateFavorite(); renderPlaylists(); renderQueue();
 });
-ui.seekBar.addEventListener('input', () => {
-  const percent = Number(ui.seekBar.value) / 10; paintRange(ui.seekBar, percent);
-  if (Number.isFinite(audio.duration)) ui.currentTime.textContent = formatTime(audio.duration * Number(ui.seekBar.value) / 1000);
+let seekPointerActive = false;
+function seekFromPointer(event) {
+  const bounds = ui.seekBar.getBoundingClientRect();
+  if (!Number.isFinite(audio.duration) || bounds.width <= 0) return;
+  const ratio = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
+  setSeekValue(ratio * 1000);
+  audio.currentTime = audio.duration * ratio;
+  ui.currentTime.textContent = formatTime(audio.currentTime);
+  ui.seekBar.setAttribute('aria-valuetext', `${formatTime(audio.currentTime)} of ${formatTime(audio.duration)}`);
+}
+ui.seekBar.addEventListener('pointerdown', event => {
+  if (event.button !== 0) return;
+  seekPointerActive = true;
+  ui.seekBar.setPointerCapture(event.pointerId);
+  seekFromPointer(event);
 });
-ui.seekBar.addEventListener('change', () => { if (Number.isFinite(audio.duration)) audio.currentTime = audio.duration * Number(ui.seekBar.value) / 1000; });
+ui.seekBar.addEventListener('pointermove', event => { if (seekPointerActive) seekFromPointer(event); });
+ui.seekBar.addEventListener('pointerup', event => {
+  if (!seekPointerActive) return;
+  seekFromPointer(event);
+  seekPointerActive = false;
+  if (ui.seekBar.hasPointerCapture(event.pointerId)) ui.seekBar.releasePointerCapture(event.pointerId);
+});
+ui.seekBar.addEventListener('pointercancel', () => { seekPointerActive = false; });
+ui.seekBar.addEventListener('lostpointercapture', () => { seekPointerActive = false; });
+ui.seekBar.addEventListener('keydown', event => {
+  if (!Number.isFinite(audio.duration) || !['Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  audio.currentTime = event.key === 'Home' ? 0 : audio.duration;
+});
 ui.volumeBar.addEventListener('input', () => {
   audio.volume = Number(ui.volumeBar.value) / 100; ui.volumeValue.textContent = ui.volumeBar.value; paintRange(ui.volumeBar, Number(ui.volumeBar.value));
+  if (audio.muted) setMuted(false);
   localStorage.setItem('volume', ui.volumeBar.value);
 });
+ui.volumeMuteButton.addEventListener('click', () => setMuted(!audio.muted));
+setMuted(localStorage.getItem('muted') === 'true');
 const savedVolume = Number(localStorage.getItem('volume'));
 if (Number.isFinite(savedVolume) && localStorage.getItem('volume') !== null) {
   audio.volume = savedVolume / 100; ui.volumeBar.value = String(savedVolume); ui.volumeValue.textContent = String(savedVolume); paintRange(ui.volumeBar, savedVolume);
@@ -640,8 +724,10 @@ audio.addEventListener('play', () => { setPlaying(true); startVisualizer(); rend
 audio.addEventListener('pause', () => { setPlaying(false); stopVisualizer(); renderQueue(); });
 audio.addEventListener('timeupdate', () => {
   if (!Number.isFinite(audio.duration)) return;
+  if (seekPointerActive) return;
   const percent = audio.currentTime / audio.duration * 100;
-  ui.seekBar.value = String(Math.round(percent * 10)); paintRange(ui.seekBar, percent);
+  setSeekValue(percent * 10);
+  ui.seekBar.setAttribute('aria-valuetext', `${formatTime(audio.currentTime)} of ${formatTime(audio.duration)}`);
   ui.currentTime.textContent = formatTime(audio.currentTime); ui.duration.textContent = formatTime(audio.duration);
 });
 audio.addEventListener('loadedmetadata', () => { if (Number.isFinite(audio.duration)) ui.duration.textContent = formatTime(audio.duration); });
