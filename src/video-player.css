@@ -102,3 +102,8 @@ html.fullscreen-mode mpv-video{border-radius:0}
 .resume-prompt{position:absolute;z-index:7;top:62px;right:16px;min-height:39px;padding:0 14px;border-radius:20px;color:#fff;font:inherit;font-size:12px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
 .resume-prompt:not(.hidden){opacity:1;pointer-events:auto}
 @media(max-width:560px){.resume-prompt{top:53px;right:9px;min-height:35px;font-size:11px}}
+
+@property --scroll-fade-top{syntax:"<length>";inherits:false;initial-value:0px}
+@property --scroll-fade-bottom{syntax:"<length>";inherits:false;initial-value:0px}
+.scroll-edge-fade{-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 var(--scroll-fade-top),#000 calc(100% - var(--scroll-fade-bottom)),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,#000 var(--scroll-fade-top),#000 calc(100% - var(--scroll-fade-bottom)),transparent 100%);transition:--scroll-fade-top 160ms ease-out,--scroll-fade-bottom 160ms ease-out}
+@media(prefers-reduced-motion:reduce){.scroll-edge-fade{transition:none}}

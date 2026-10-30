@@ -8,7 +8,7 @@ const ui = {
   volumeValue: $('volumeValue'), currentTime: $('currentTime'), duration: $('duration'),
   trackTitle: $('trackTitle'), trackArtist: $('trackArtist'), trackCount: $('trackCount'), libraryLabel: $('libraryLabel'),
   artwork: $('artwork'), artworkWrap: $('artworkWrap'), queuePanel: $('queuePanel'), queueList: $('queueList'),
-  toast: $('toast'), homeTitle: $('homeTitle'), homeShortcuts: $('homeShortcuts'), homeLibrary: $('homeLibrary'), settingsView: $('settingsView'),
+  toast: $('toast'), homeTitle: $('homeTitle'), homeShortcuts: $('homeShortcuts'), homeLibrary: $('homeLibrary'), sortToolbar: $('sortToolbar'), sortBy: $('sortBy'), sortPickerButton: $('sortPickerButton'), sortPickerValue: $('sortPickerValue'), sortPickerOptions: $('sortPickerOptions'), settingsView: $('settingsView'),
   playlistGrid: $('playlistGrid'), homeSongCount: $('homeSongCount'), favoriteSongCount: $('favoriteSongCount'), settingsPlaylistList: $('settingsPlaylistList'), homeNotes: $('homeNotes'), colorNotesToggle: $('colorNotesToggle'), homeSearch: document.querySelector('.home-search'), homeSearchButton: $('homeSearchButton'), homeCreatePlaylistButton: $('homeCreatePlaylistButton'), homeSettingsButton: $('homeSettingsButton'), homeHomeButton: $('homeHomeButton'), playlistBackButton: $('playlistBackButton'), homeCloseButton: $('homeCloseButton'), homeMinimizeButton: $('homeMinimizeButton'), settingsFolderButton: $('settingsFolderButton'), settingsRescanButton: $('settingsRescanButton'), defaultAudioButton: $('defaultAudioButton'),
   allSongsCard: $('allSongsCard'), favoritesCard: $('favoritesCard'), playlistDialog: $('playlistDialog'), playlistForm: $('playlistForm'), miniEdgeColorToggle: $('miniEdgeColorToggle'), settingsColorToggle: $('settingsColorToggle'), settingsColorOptions: $('settingsColorOptions'), settingsPlaylistToggle: $('settingsPlaylistToggle'),
   playlistName: $('playlistName'), cancelPlaylist: $('cancelPlaylist'), addPlaylistDialog: $('addPlaylistDialog'), addPlaylistForm: $('addPlaylistForm'), playlistChoices: $('playlistChoices'), cancelAddPlaylist: $('cancelAddPlaylist'), confirmationDialog: $('confirmationDialog'), confirmationTitle: $('confirmationTitle'), confirmationMessage: $('confirmationMessage'), nowPlayingPlay: $('nowPlayingPlay'),
@@ -17,6 +17,7 @@ const ui = {
 let tracks = [];
 let folder = localStorage.getItem('musicFolder') || '';
 let currentIndex = -1;
+let sortMode = ['title', 'date-added'].includes(localStorage.getItem('musicSortMode')) ? localStorage.getItem('musicSortMode') : 'manual';
 let shuffle = localStorage.getItem('shuffle') === 'true';
 let favorites = new Set(JSON.parse(localStorage.getItem('favorites') || '[]'));
 let colorfulNotes = localStorage.getItem('colorfulNotes') === 'true';
@@ -35,6 +36,15 @@ let searchMetadataTask = null;
 let searchIndexing = false;
 let searchRenderTimer;
 const searchFieldCache = new WeakMap();
+const queueArtworkObserver = new IntersectionObserver(entries => {
+  for (const entry of entries) {
+    if (!entry.isIntersecting) continue;
+    queueArtworkObserver.unobserve(entry.target);
+    const track = entry.target.__musicTrack;
+    if (!track || track.artworkLoaded) { if (track) paintQueueArtwork(entry.target, track); continue; }
+    void fetchTrackInfo(track).then(() => paintQueueArtwork(entry.target, track)).catch(() => paintQueueArtwork(entry.target, track));
+  }
+}, { root: document.getElementById('queueList'), rootMargin: '72px' });
 let trackToAdd = null;
 let selectedPlaylistIds = new Set();
 let playlists = [];
@@ -51,7 +61,22 @@ const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').match
 let artworkColorRequest = 0;
 ui.shuffleButton.classList.toggle('active', shuffle);
 ui.shuffleButton.setAttribute('aria-pressed', String(shuffle));
+ui.sortBy.value = sortMode;
+syncSortPicker();
 audio.volume = 0.75;
+
+function syncSortPicker() {
+  if (!ui.sortPickerValue) return;
+  ui.sortPickerValue.textContent = ui.sortBy.selectedOptions[0]?.text || 'Manual';
+  ui.sortPickerOptions.querySelectorAll('[data-sort-value]').forEach(option => {
+    option.setAttribute('aria-selected', String(option.dataset.sortValue === ui.sortBy.value));
+  });
+}
+function closeSortPicker(returnFocus = false) {
+  ui.sortPickerOptions.hidden = true;
+  ui.sortPickerButton.setAttribute('aria-expanded', 'false');
+  if (returnFocus) ui.sortPickerButton.focus();
+}
 
 function formatTime(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -277,9 +302,11 @@ function showHome(view = 'home', playlistId = null, returnToPlayer = false) {
   ui.playlistBackButton.setAttribute('aria-label', queueReturnToPlayer ? 'Back to player' : 'Back to home');
   ui.homeSettingsButton.classList.toggle('hidden', view === 'settings');
   ui.homeLibrary.classList.toggle('all-songs-view', view === 'all');
+  ui.sortToolbar.classList.toggle('hidden', !['all', 'playlist', 'favorites'].includes(view));
   ui.homeTitle.textContent = view === 'playlist' ? playlist?.name || 'Playlist' : view === 'favorites' ? 'Favorites' : view === 'settings' ? 'Settings' : view === 'search' ? 'Search' : view === 'all' ? 'All Songs' : 'Home';
   ui.queuePanel.classList.remove('search-open'); ui.homeSearch.classList.add('hidden');
   ui.searchInput.value = ''; renderPlaylists(); renderQueue();
+  if (sortMode === 'title' && ['all', 'playlist', 'favorites'].includes(view)) void indexSearchMetadata();
 }
 function showPlayer() {
   const shell = document.querySelector('.window-shell');
@@ -340,6 +367,18 @@ function restoreTrackOrder() {
   } catch {}
 }
 function saveTrackOrder() { if (folder) localStorage.setItem(orderKey(), JSON.stringify(tracks.map(track => track.path))); }
+function restoreTrackAddedDates(list = tracks) {
+  if (!folder) return;
+  const key = `music-added:${folder}`;
+  let added = {};
+  try { added = JSON.parse(localStorage.getItem(key) || '{}'); if (!added || typeof added !== 'object' || Array.isArray(added)) added = {}; } catch {}
+  const now = Date.now(); let changed = false;
+  for (const track of list) {
+    if (Number.isFinite(added[track.path])) track.addedAt = added[track.path];
+    else { track.addedAt = now; added[track.path] = now; changed = true; }
+  }
+  if (changed) localStorage.setItem(key, JSON.stringify(added));
+}
 function normalizeSearch(value) {
   return String(value || '').normalize('NFKD').replace(/\p{M}/gu, '').toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
 }
@@ -405,6 +444,21 @@ function trackSearchFields(track, field = null) {
   }
   return fields.filter(item => !field || item.kind === field);
 }
+function fetchTrackInfo(track) {
+  if (!track.infoPromise) {
+    track.infoPromise = window.player.getTrackInfo(track.path)
+      .then(info => { track.artwork = info?.artwork || ''; return info; })
+      .catch(error => { track.artwork = ''; throw error; })
+      .finally(() => { track.artworkLoaded = true; });
+  }
+  return track.infoPromise;
+}
+function paintQueueArtwork(element, track) {
+  if (track.artwork) {
+    element.classList.add('has-cover');
+    element.style.backgroundImage = `url("${track.artwork}")`;
+  }
+}
 function scoreSearchClause(track, clause) {
   const fields = trackSearchFields(track, clause.field);
   if (!fields.length) return Infinity;
@@ -454,9 +508,14 @@ function renderQueue() {
   ui.queueList.replaceChildren();
   const playlist = homeView === 'playlist' ? playlists.find(item => item.id === selectedPlaylistId) : null;
   let visibleTracks = playlist ? playlist.tracks.map(path => tracks.find(track => track.path === path)).filter(Boolean) : homeView === 'favorites' ? tracks.filter(track => favorites.has(track.path)) : tracks;
-  if (shuffle && playbackPaths?.length && ((homeView === 'playlist' && playbackSource?.type === 'playlist' && playbackSource.id === playlist?.id) || (homeView === 'favorites' && playbackSource?.type === 'favorites') || (homeView === 'all' && playbackSource?.type === 'all'))) {
+  const activeShuffleOrder = queueReturnToPlayer && shuffle && playbackPaths?.length && ((homeView === 'playlist' && playbackSource?.type === 'playlist' && playbackSource.id === playlist?.id) || (homeView === 'favorites' && playbackSource?.type === 'favorites') || (homeView === 'all' && playbackSource?.type === 'all'));
+  if (activeShuffleOrder) {
     const order = new Map(playbackPaths.map((path, position) => [path, position]));
     visibleTracks = [...visibleTracks].sort((a, b) => (order.get(a.path) ?? Infinity) - (order.get(b.path) ?? Infinity));
+  } else if (homeView !== 'search' && sortMode === 'title') {
+    visibleTracks = [...visibleTracks].sort((a, b) => (a.title || a.filename.replace(/\.[^.]+$/, '')).localeCompare(b.title || b.filename.replace(/\.[^.]+$/, ''), undefined, { numeric: true, sensitivity: 'base' }));
+  } else if (homeView !== 'search' && sortMode === 'date-added') {
+    visibleTracks = [...visibleTracks].sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0) || a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' }));
   }
   const queryClauses = parseMusicSearch(ui.searchInput.value);
   const matches = homeView === 'search' && !queryClauses.length ? [] : visibleTracks.map((track, position) => ({ track, index: tracks.indexOf(track), position, score: scoreTrackSearch(track, queryClauses) })).filter(item => Number.isFinite(item.score));
@@ -466,16 +525,20 @@ function renderQueue() {
     shown++;
     const row = document.createElement('div');
     row.className = 'queue-item' + (index === currentIndex ? ' current' : '');
-    row.draggable = homeView === 'all' && !shuffle; row.dataset.index = String(index); row.title = row.draggable ? 'Drag to reorder' : '';
+    row.draggable = homeView === 'all' && !shuffle && sortMode === 'manual'; row.dataset.index = String(index); row.title = row.draggable ? 'Drag to reorder' : '';
     const indexCell = document.createElement('span'); indexCell.className = 'queue-index-cell';
-    const number = document.createElement('span'); number.className = 'queue-number';
+    const artwork = document.createElement('span'); artwork.className = 'queue-artwork'; artwork.setAttribute('aria-hidden', 'true');
+    const fallback = document.createElement('span'); fallback.className = 'queue-artwork-fallback'; fallback.textContent = String.fromCharCode(9835); artwork.append(fallback);
+    if (track.artwork) paintQueueArtwork(artwork, track);
+    else if (!track.artworkLoaded) { artwork.__musicTrack = track; queueArtworkObserver.observe(artwork); }
     if (index === currentIndex && !audio.paused) {
-      number.innerHTML = '<svg class="now-playing-wave" viewBox="0 0 18 18" aria-hidden="true"><rect x="2" y="7" width="2" height="4" rx="1"/><rect x="6" y="4" width="2" height="10" rx="1"/><rect x="10" y="2" width="2" height="14" rx="1"/><rect x="14" y="6" width="2" height="6" rx="1"/></svg>';
-      number.setAttribute('aria-label', 'Now playing');
-    } else number.textContent = String(visibleTracks.indexOf(track) + 1).padStart(2, '0');
+      const playing = document.createElement('span'); playing.className = 'queue-artwork-playing'; playing.setAttribute('aria-label', 'Now playing');
+      playing.innerHTML = '<svg viewBox="0 0 18 18" aria-hidden="true"><rect x="2" y="7" width="2" height="4" rx="1"/><rect x="6" y="4" width="2" height="10" rx="1"/><rect x="10" y="2" width="2" height="14" rx="1"/><rect x="14" y="6" width="2" height="6" rx="1"/></svg>';
+      artwork.append(playing);
+    }
     const favorite = document.createElement('button'); favorite.type = 'button'; favorite.className = 'queue-favorite' + (favorites.has(track.path) ? ' active' : ''); favorite.title = favorites.has(track.path) ? 'Remove from favorites' : 'Add to favorites'; favorite.setAttribute('aria-label', favorite.title); favorite.setAttribute('aria-pressed', String(favorites.has(track.path)));
     favorite.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 8.8c0 4.2-8.8 10.2-8.8 10.2S3.2 13 3.2 8.8A4.4 4.4 0 0 1 12 7.4a4.4 4.4 0 0 1 8.8 1.4Z"/></svg>';
-    indexCell.append(number, favorite);
+    indexCell.append(artwork, favorite);
     favorite.addEventListener('click', () => { favorites.has(track.path) ? favorites.delete(track.path) : favorites.add(track.path); localStorage.setItem('favorites', JSON.stringify([...favorites])); updatePlaybackHeader(); renderPlaylists(); renderQueue(); updateFavorite(); });
     const play = document.createElement('button'); play.type = 'button'; play.className = 'queue-select'; play.setAttribute('aria-label', `Play ${track.title || track.filename}`);
     const copy = document.createElement('span'); copy.className = 'queue-track';
@@ -543,6 +606,7 @@ async function selectFolder() {
     folder = result.folder;
     localStorage.setItem('musicFolder', folder);
     tracks = result.tracks;
+    restoreTrackAddedDates();
     restoreTrackOrder();
     ui.searchInput.value = '';
     currentIndex = -1;
@@ -586,7 +650,7 @@ async function playTrack(index, autoplay = true) {
   const playback = autoplay ? audio.play().then(() => true).catch(() => false) : Promise.resolve(true);
   if (!autoplay) setPlaying(false);
   try {
-    const info = await window.player.getTrackInfo(track.path);
+    const info = await fetchTrackInfo(track);
     track.title = info?.title || track.filename.replace(/\.[^.]+$/, '');
     track.artist = info?.artist || 'Unknown artist';
     track.album = info?.album || '';
@@ -613,6 +677,7 @@ async function rescan() {
   try {
     const oldTrack = tracks[currentIndex]?.path;
     tracks = await window.player.scanFolder(folder);
+    restoreTrackAddedDates();
     restoreTrackOrder();
     currentIndex = tracks.findIndex(track => track.path === oldTrack);
     setTrackCount(); renderQueue(); renderPlaylists();
@@ -740,6 +805,37 @@ ui.searchInput.addEventListener('input', () => {
   searchRenderTimer = setTimeout(renderQueue, 90);
   void indexSearchMetadata();
 });
+ui.sortPickerButton.addEventListener('click', () => {
+  const open = ui.sortPickerOptions.hidden;
+  ui.sortPickerOptions.hidden = !open;
+  ui.sortPickerButton.setAttribute('aria-expanded', String(open));
+  if (open) ui.sortPickerOptions.querySelector('[aria-selected="true"]')?.focus();
+});
+ui.sortPickerOptions.addEventListener('click', event => {
+  const option = event.target.closest('[data-sort-value]');
+  if (!option) return;
+  ui.sortBy.value = option.dataset.sortValue;
+  ui.sortBy.dispatchEvent(new Event('change', { bubbles: true }));
+  closeSortPicker(true);
+});
+ui.sortPickerOptions.addEventListener('keydown', event => {
+  if (event.key === 'Escape') { event.preventDefault(); closeSortPicker(true); return; }
+  if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return;
+  event.preventDefault();
+  const options = [...ui.sortPickerOptions.querySelectorAll('[data-sort-value]')];
+  const current = options.indexOf(document.activeElement);
+  options[(current + (event.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length]?.focus();
+});
+document.addEventListener('pointerdown', event => {
+  if (!ui.sortToolbar.contains(event.target)) closeSortPicker();
+});
+ui.sortBy.addEventListener('change', () => {
+  sortMode = ui.sortBy.value;
+  syncSortPicker();
+  localStorage.setItem('musicSortMode', sortMode);
+  renderQueue();
+  if (sortMode === 'title') void indexSearchMetadata();
+});
 ui.queueButton.addEventListener('click', () => {
   if (playbackSource?.type === 'playlist') showHome('playlist', playbackSource.id, true);
   else showHome(playbackSource?.type === 'favorites' ? 'favorites' : 'all', null, true);
@@ -815,14 +911,14 @@ if (startupAudioPath) {
   folder = startupFolder;
   localStorage.setItem('musicFolder', folder);
   window.player.scanFolder(startupFolder).then(found => {
-    tracks = found; restoreTrackOrder(); setTrackCount(); renderQueue(); renderPlaylists();
+    tracks = found; restoreTrackAddedDates(); restoreTrackOrder(); setTrackCount(); renderQueue(); renderPlaylists();
     const index = tracks.findIndex(track => track.path.toLocaleLowerCase() === startupAudioPath.toLocaleLowerCase());
     if (index >= 0) { playbackSource = { type: 'all' }; playbackPaths = null; void playTrack(index); }
     else showToast('Could not find that audio file in its folder');
   }).catch(() => showToast('Could not open that audio file'));
 } else if (folder) {
   window.player.scanFolder(folder).then(found => {
-    tracks = found; restoreTrackOrder(); setTrackCount(); renderQueue(); renderPlaylists();
+    tracks = found; restoreTrackAddedDates(); restoreTrackOrder(); setTrackCount(); renderQueue(); renderPlaylists();
     if (!tracks.length) { ui.trackTitle.textContent = 'No music found'; ui.trackArtist.textContent = 'Choose a folder to get started'; }
     else {
       const lastPath = localStorage.getItem('lastPlayedTrack');
