@@ -18,6 +18,10 @@ let fullscreen = false;
 let volumeLevel = Number($('volume').value) || 75;
 let previousVolumeLevel = volumeLevel;
 let muted = false;
+let currentFilePath = null;
+let pendingResume = null;
+let resumeTimer;
+let lastResumeSave = 0;
 
 function timeText(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -52,6 +56,10 @@ async function updateProgress() {
   $('remainingTime').textContent = `-${timeText(Math.max(0, duration - (scrubbing ? Number($('timeline').value) / 1000 * duration : current)))}`;
   if (!scrubbing) $('timeline').value = duration ? String(Math.round(current / duration * 1000)) : '0';
   $('timeline').disabled = !duration;
+  if (currentFilePath && !pendingResume && current >= 10 && Date.now() - lastResumeSave >= 3500) {
+    lastResumeSave = Date.now();
+    void window.player.saveVideoResume(currentFilePath, current, duration).catch(() => {});
+  }
   } catch (error) {
     if (!closing) reportError(`Could not read playback progress: ${error.message || error}`);
   } finally {
@@ -59,6 +67,12 @@ async function updateProgress() {
   }
 }
 async function openVideo(filePath, title) {
+  if (currentFilePath) await saveCurrentPosition();
+  clearTimeout(resumeTimer);
+  pendingResume = null;
+  $('resumePrompt').classList.add('hidden');
+  currentFilePath = filePath;
+  lastResumeSave = 0;
   $('error').classList.add('hidden');
   document.title = title || 'MyCinema';
   $('timeline').value = '0';
@@ -69,10 +83,42 @@ async function openVideo(filePath, title) {
   progressTimer = setInterval(updateProgress, 200);
   try {
     await video.open(filePath);
-    await video.play();
+    const saved = await window.player.getVideoResume(filePath);
+    const { duration } = await video.getPlaybackInfo();
+    if (saved?.position >= 10 && saved.position < (duration || saved.duration) - 10) {
+      pendingResume = { filePath, position: saved.position };
+      const prompt = $('resumePrompt');
+      prompt.textContent = `Continue · ${timeText(saved.position)}`;
+      prompt.classList.remove('hidden');
+      resumeTimer = setTimeout(async () => {
+        if (pendingResume?.filePath !== filePath) return;
+        pendingResume = null;
+        prompt.classList.add('hidden');
+        try { await video.play(); } catch (error) { reportError(`Could not start this video: ${error.message || error}`); }
+      }, 5000);
+    } else await video.play();
   } catch (error) {
     reportError(`Could not play this video: ${error.message || error}`);
   }
+}
+async function saveCurrentPosition() {
+  if (!currentFilePath || pendingResume) return;
+  try {
+    const info = await video.getPlaybackInfo();
+    if (info.duration > 0) await window.player.saveVideoResume(currentFilePath, info.currentTime, info.duration);
+  } catch {}
+}
+async function continueFromSavedPosition() {
+  if (!pendingResume) return;
+  const { position } = pendingResume;
+  clearTimeout(resumeTimer);
+  pendingResume = null;
+  $('resumePrompt').classList.add('hidden');
+  try {
+    const info = await video.getPlaybackInfo();
+    await video.seek(Math.min(position, Math.max(0, info.duration - 1)));
+    await video.play();
+  } catch (error) { reportError(`Could not resume this video: ${error.message || error}`); }
 }
 function seekBy(seconds) {
   video.seekRelative(seconds).catch(error => reportError(`Seek failed: ${error.message || error}`));
@@ -141,7 +187,7 @@ async function cycleTrack(type) {
   try {
     const tracks = await video.getTracks(type);
     if (!tracks.length) return showTrackMenu(type, type === 'audio' ? $('audioTrack') : $('subtitleTrack'));
-    const options = type === 'sub' ? [{ id: 'no', selected: tracks.every(track => !track.selected) }, ...tracks] : tracks;
+    const options = [{ id: 'no', selected: tracks.every(track => !track.selected) }, ...tracks];
     const current = options.findIndex(track => track.selected);
     const next = options[(current + 1) % options.length];
     await video.selectTrack(type, String(next.id));
@@ -157,6 +203,12 @@ function setVolume(level) {
   $('volumeValue').textContent = `${volumeLevel}%`;
   if (volumeLevel > 0) { previousVolumeLevel = volumeLevel; muted = false; }
   else muted = true;
+  const muteButton = $('muteVolume');
+  muteButton.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
+  muteButton.title = muted ? 'Unmute' : 'Mute';
+  muteButton.innerHTML = muted
+    ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="m16 9 5 6m0-6-5 6"/></svg>'
+    : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12 0a5 5 0 0 1 0 6"/></svg>';
   video.setVolume(volumeLevel).catch(error => reportError(`Volume change failed: ${error.message || error}`));
   showControls();
 }
@@ -213,13 +265,16 @@ $('timeline').addEventListener('pointercancel', () => { scrubbing = false; updat
 $('volume').addEventListener('input', () => {
   setVolume(Number($('volume').value));
 });
+$('muteVolume').addEventListener('click', () => setVolume(muted ? (previousVolumeLevel || 75) : 0));
+$('resumePrompt').addEventListener('click', continueFromSavedPosition);
 $('fullscreen').addEventListener('click', () => setFullscreen(!fullscreen));
 $('player').addEventListener('dblclick', event => {
   if (event.target.closest('button,input,label,.track-menu')) return;
   setFullscreen(!fullscreen);
 });
-$('close').addEventListener('click', () => window.player.close());
+$('close').addEventListener('click', async () => { await saveCurrentPosition(); window.player.close(); });
 window.addEventListener('beforeunload', () => {
+  void saveCurrentPosition();
   closing = true;
   clearInterval(progressTimer);
   clearTimeout(hideTimer);
@@ -240,12 +295,14 @@ document.addEventListener('click', event => {
   if (!event.target.closest('#trackMenu, #audioTrack, #subtitleTrack')) $('trackMenu').classList.add('hidden');
 });
 document.addEventListener('keydown', event => {
-  if (event.target.closest('textarea,[contenteditable="true"],input:not([type="range"])')) return;
+  const target = event.target instanceof Element ? event.target : null;
+  if ((target && target.closest('input,textarea,select,[contenteditable="true"]')) || event.metaKey || event.shiftKey || event.ctrlKey && event.altKey) return;
   const key = event.key.toLowerCase();
   let handled = true;
-  if (event.altKey && event.code === 'ArrowLeft') seekBy(-30);
-  else if (event.altKey && event.code === 'ArrowRight') seekBy(30);
-  else if (event.ctrlKey && event.code === 'ArrowLeft') seekBy(15);
+  if (event.altKey && event.code === 'ArrowLeft') seekBy(-60);
+  else if (event.altKey && event.code === 'ArrowRight') seekBy(60);
+  else if (event.ctrlKey && event.code === 'ArrowLeft') seekBy(-30);
+  else if (event.ctrlKey && event.code === 'ArrowRight') seekBy(30);
   else if (event.code === 'Space') togglePlay();
   else if (event.code === 'ArrowLeft') seekBy(-10);
   else if (event.code === 'ArrowRight') seekBy(10);
@@ -254,7 +311,7 @@ document.addEventListener('keydown', event => {
   else if (key === 'm') setVolume(muted ? (previousVolumeLevel || 75) : 0);
   else if (key === 'v') void cycleTrack('sub');
   else if (key === 'b') void cycleTrack('audio');
-  else if (key === 'f') { if (!fullscreen) void setFullscreen(true); }
+  else if (key === 'f') void setFullscreen(!fullscreen);
   else if (key === 'i' || event.code === 'Escape') { if (fullscreen) void setFullscreen(false); }
   else handled = false;
   if (handled) { event.preventDefault(); showControls(); }

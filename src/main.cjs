@@ -27,6 +27,40 @@ let videoWindowRestoreMaxSize;
 let videoWindowFullscreen = false;
 const readyVideoWindows = new WeakSet();
 const pendingVideos = new WeakMap();
+let videoResumeEntries;
+let videoResumeLoad;
+let videoResumeWrite = Promise.resolve();
+
+function validVideoPath(filePath) {
+  return typeof filePath === 'string' && path.isAbsolute(filePath) && videoExtensions.has(path.extname(filePath).toLowerCase());
+}
+
+async function getVideoResumeEntries() {
+  if (!videoResumeLoad) videoResumeLoad = (async () => {
+    try {
+      const saved = JSON.parse(await fs.readFile(path.join(app.getPath('userData'), 'mycinema-resume.json'), 'utf8'));
+      videoResumeEntries = new Map(Object.entries(saved).filter(([, value]) => value && Number.isFinite(value.position) && value.position > 0));
+    } catch { videoResumeEntries = new Map(); }
+  })();
+  await videoResumeLoad;
+  return videoResumeEntries;
+}
+
+async function saveVideoResumePosition(filePath, position, duration) {
+  const entries = await getVideoResumeEntries();
+  const key = path.resolve(filePath).toLocaleLowerCase();
+  if (position < 10 || duration > 0 && position >= duration - 10) entries.delete(key);
+  else if (position >= 10 && Number.isFinite(duration) && duration > 0) entries.set(key, { position, duration });
+  else return true;
+  const storePath = path.join(app.getPath('userData'), 'mycinema-resume.json');
+  const write = videoResumeWrite.then(async () => {
+    await fs.mkdir(path.dirname(storePath), { recursive: true });
+    await fs.writeFile(storePath, JSON.stringify(Object.fromEntries(entries)), 'utf8');
+  });
+  videoResumeWrite = write.catch(error => console.error('Could not save MyCinema playback position:', error));
+  await videoResumeWrite;
+  return true;
+}
 
 function attachMpvWindow(window) {
   if (!mpvMain) return;
@@ -182,6 +216,15 @@ ipcMain.handle('open-video-window', async (event, filePath, title) => {
   if (!mainWindow || event.sender !== mainWindow.webContents || typeof filePath !== 'string' || !path.isAbsolute(filePath) || !videoExtensions.has(path.extname(filePath).toLowerCase())) return false;
   try { if (!(await fs.stat(filePath)).isFile()) return false; } catch { return false; }
   return createVideoWindow(filePath, typeof title === 'string' ? title.slice(0, 180) : path.basename(filePath));
+});
+ipcMain.handle('video-resume-get', async (event, filePath) => {
+  if (!videoWindow || event.sender !== videoWindow.webContents || !validVideoPath(filePath)) return null;
+  const entries = await getVideoResumeEntries();
+  return entries.get(path.resolve(filePath).toLocaleLowerCase()) || null;
+});
+ipcMain.handle('video-resume-save', async (event, filePath, position, duration) => {
+  if (!videoWindow || event.sender !== videoWindow.webContents || !validVideoPath(filePath) || !Number.isFinite(position) || !Number.isFinite(duration) || position < 0 || duration <= 0 || duration > 604800 || position > duration) return false;
+  return saveVideoResumePosition(filePath, position, duration);
 });
 ipcMain.handle('set-video-aspect', (event, width, height) => {
   if (!videoWindow || videoWindow.isDestroyed() || event.sender !== videoWindow.webContents || !Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1 || width > 10000 || height > 10000) return false;

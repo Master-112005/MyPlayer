@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('player', {
   chooseVideoFolder: () => ipcRenderer.invoke('choose-video-folder'),
   scanVideoFolder: folder => ipcRenderer.invoke('scan-video-folder', folder),
   openVideoWindow: (filePath, title) => ipcRenderer.invoke('open-video-window', filePath, title),
+  getVideoResume: filePath => ipcRenderer.invoke('video-resume-get', filePath),
+  saveVideoResume: (filePath, position, duration) => ipcRenderer.invoke('video-resume-save', filePath, position, duration),
   setVideoAspect: (width, height) => ipcRenderer.invoke('set-video-aspect', width, height),
   setVideoFullscreen: fullscreen => ipcRenderer.invoke('set-video-fullscreen', fullscreen),
   openDefaultApps: kind => ipcRenderer.invoke('open-default-apps', kind),

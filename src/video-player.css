@@ -97,3 +97,8 @@ html.fullscreen-mode mpv-video{border-radius:0}
 .fullscreen{right:17px;bottom:18px}
 .fullscreen.faded{transform:translateY(7px)}
 @media(max-width:560px){.bottom-controls{left:50%;bottom:9px;width:calc(100% - 120px);height:44px;gap:7px;padding:0 8px;transform:translateX(-50%)}.bottom-controls.faded{transform:translate(-50%,7px)}.fullscreen{right:9px;bottom:13px;width:36px;height:36px}}
+.top-volume .volume-mute{width:20px;height:24px;flex:none;display:grid;place-items:center;padding:0;border:0;background:transparent;color:#fff;cursor:pointer}
+.top-volume .volume-mute svg{width:17px;height:17px}
+.resume-prompt{position:absolute;z-index:7;top:62px;right:16px;min-height:39px;padding:0 14px;border-radius:20px;color:#fff;font:inherit;font-size:12px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
+.resume-prompt:not(.hidden){opacity:1;pointer-events:auto}
+@media(max-width:560px){.resume-prompt{top:53px;right:9px;min-height:35px;font-size:11px}}

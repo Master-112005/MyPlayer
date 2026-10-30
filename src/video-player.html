@@ -16,10 +16,11 @@
       <button class="glass track-button" id="subtitleTrack" title="Choose subtitle track" aria-label="Choose subtitle track"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 10h4m2 0h4M7 14h3m3 0h4"/></svg><span>Subtitles</span></button>
     </nav>
     <div class="top-actions auto-hide">
-      <label class="top-volume" title="Volume"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4Zm12 0a5 5 0 0 1 0 6"/></svg><input id="volume" type="range" min="0" max="200" value="75" aria-label="Volume"><output id="volumeValue" for="volume">75%</output></label>
+      <div class="top-volume" title="Volume"><button class="volume-mute" id="muteVolume" type="button" aria-label="Mute" title="Mute"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12 0a5 5 0 0 1 0 6"/></svg></button><input id="volume" type="range" min="0" max="200" value="75" aria-label="Volume"><output id="volumeValue" for="volume">75%</output></div>
       <button class="glass close" id="close" aria-label="Close video" title="Close"><svg viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
     </div>
     <div class="track-menu auto-hide hidden" id="trackMenu" role="menu" aria-label="Track choices"></div>
+    <button class="glass resume-prompt hidden" id="resumePrompt" type="button" aria-label="Continue playback"></button>
     <button class="glass seek-button skip-back auto-hide" id="back" aria-label="Back 10 seconds" title="Back 10 seconds"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M9.4 7.6H4.2V2.5M4.3 7.6a12.4 12.4 0 1 1-.1 16.7"/><text x="16" y="20.4">10</text></svg></button>
     <button class="glass play center-play auto-hide" id="toggle" aria-label="Play" title="Play"><svg class="play-icon" viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg><svg class="pause-icon" viewBox="0 0 24 24"><path d="M8 6v12M16 6v12"/></svg></button>
     <button class="glass seek-button skip-forward auto-hide" id="forward" aria-label="Forward 10 seconds" title="Forward 10 seconds"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M22.6 7.6h5.2V2.5m-.1 5.1a12.4 12.4 0 1 0 .1 16.7"/><text x="16" y="20.4">10</text></svg></button>

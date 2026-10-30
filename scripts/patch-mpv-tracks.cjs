@@ -11,6 +11,11 @@ function replace(relativePath, before, after, marker) {
 }
 
 replace('native/mpv-addon/src/mpv_addon.cc',
+  '    set_option("audio-display", "no");\n',
+  '    set_option("audio-display", "no");\n    set_option("panscan", "1");\n',
+  'set_option("panscan", "1")');
+
+replace('native/mpv-addon/src/mpv_addon.cc',
   '      InstanceMethod("setVolume", &MpvPlayer::SetVolume),\n',
   '      InstanceMethod("setVolume", &MpvPlayer::SetVolume),\n      InstanceMethod("cycleAudioTrack", &MpvPlayer::CycleAudioTrack),\n      InstanceMethod("cycleSubtitleTrack", &MpvPlayer::CycleSubtitleTrack),\n',
   'InstanceMethod("cycleAudioTrack"');
