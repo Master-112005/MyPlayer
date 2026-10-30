@@ -10,7 +10,7 @@ const ui = {
   artwork: $('artwork'), artworkWrap: $('artworkWrap'), queuePanel: $('queuePanel'), queueList: $('queueList'),
   toast: $('toast'), homeTitle: $('homeTitle'), homeShortcuts: $('homeShortcuts'), homeLibrary: $('homeLibrary'), settingsView: $('settingsView'),
   playlistGrid: $('playlistGrid'), homeSongCount: $('homeSongCount'), favoriteSongCount: $('favoriteSongCount'), settingsPlaylistList: $('settingsPlaylistList'), homeNotes: $('homeNotes'), colorNotesToggle: $('colorNotesToggle'), homeSearchButton: $('homeSearchButton'), homeCreatePlaylistButton: $('homeCreatePlaylistButton'), homeSettingsButton: $('homeSettingsButton'), homeHomeButton: $('homeHomeButton'), homeCloseButton: $('homeCloseButton'), homeMinimizeButton: $('homeMinimizeButton'), settingsFolderButton: $('settingsFolderButton'), settingsRescanButton: $('settingsRescanButton'), defaultAudioButton: $('defaultAudioButton'),
-  allSongsCard: $('allSongsCard'), favoritesCard: $('favoritesCard'), playlistDialog: $('playlistDialog'), playlistForm: $('playlistForm'),
+  allSongsCard: $('allSongsCard'), favoritesCard: $('favoritesCard'), playlistDialog: $('playlistDialog'), playlistForm: $('playlistForm'), miniEdgeColorToggle: $('miniEdgeColorToggle'), settingsColorToggle: $('settingsColorToggle'), settingsColorOptions: $('settingsColorOptions'), settingsPlaylistToggle: $('settingsPlaylistToggle'),
   playlistName: $('playlistName'), cancelPlaylist: $('cancelPlaylist'), addPlaylistDialog: $('addPlaylistDialog'), addPlaylistForm: $('addPlaylistForm'), playlistChoices: $('playlistChoices'), cancelAddPlaylist: $('cancelAddPlaylist'), confirmationDialog: $('confirmationDialog'), confirmationTitle: $('confirmationTitle'), confirmationMessage: $('confirmationMessage'), nowPlayingPlay: $('nowPlayingPlay'),
   nowPlayingBar: $('nowPlayingBar'), nowPlayingTitle: $('nowPlayingTitle'), nowPlayingArtist: $('nowPlayingArtist'), nowPlayingArt: $('nowPlayingArt')
 };
@@ -20,6 +20,8 @@ let currentIndex = -1;
 let shuffle = localStorage.getItem('shuffle') === 'true';
 let favorites = new Set(JSON.parse(localStorage.getItem('favorites') || '[]'));
 let colorfulNotes = localStorage.getItem('colorfulNotes') === 'true';
+let coloredMiniEdges = localStorage.getItem('coloredMiniEdges') !== 'false';
+let artworkEdgeRgb = '255,255,255';
 let toastTimer;
 let trackRequest = 0;
 let miniMode = false;
@@ -34,6 +36,13 @@ try { const saved = JSON.parse(localStorage.getItem('playlists') || '[]'); if (A
 let draggedIndex = -1;
 let suppressRowClick = false;
 let visualizerContext, analyser, visualizerFrame;
+let edgeEnergy = 0;
+let edgeBeat = 0;
+let edgeFlowAngle = 0;
+let previousBass = 0;
+let previousVisualizerTime = 0;
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let artworkColorRequest = 0;
 ui.shuffleButton.classList.toggle('active', shuffle);
 ui.shuffleButton.setAttribute('aria-pressed', String(shuffle));
 audio.volume = 0.75;
@@ -65,6 +74,34 @@ function setPlaying(playing) {
   ui.nowPlayingPlay.setAttribute('aria-label', playing ? 'Pause' : 'Play');
 }
 function paintRange(input, percent) { input.style.setProperty('--progress', `${Math.max(0, Math.min(100, percent))}%`); }
+function setMiniEdgeColor(rgb) {
+  if (rgb) artworkEdgeRgb = rgb;
+  document.querySelector('.window-shell').style.setProperty('--mini-edge-rgb', coloredMiniEdges ? artworkEdgeRgb : '255,255,255');
+}
+function readArtworkEdgeColor(source) {
+  const request = ++artworkColorRequest;
+  if (!source) { setMiniEdgeColor(); return; }
+  const image = new Image();
+  image.onload = () => {
+    if (request !== artworkColorRequest) return;
+    try {
+      const canvas = document.createElement('canvas'); canvas.width = 12; canvas.height = 12;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      context.drawImage(image, 0, 0, 12, 12);
+      const pixels = context.getImageData(2, 2, 8, 8).data;
+      let red = 0, green = 0, blue = 0, count = 0;
+      for (let i = 0; i < pixels.length; i += 4) {
+        const lightness = (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
+        if (pixels[i + 3] < 100 || lightness < 24 || lightness > 242) continue;
+        red += pixels[i]; green += pixels[i + 1]; blue += pixels[i + 2]; count++;
+      }
+      const brighten = value => Math.round(value / count * 0.55 + 255 * 0.45);
+      setMiniEdgeColor(count ? `${brighten(red)},${brighten(green)},${brighten(blue)}` : '225,225,225');
+    } catch { setMiniEdgeColor(); }
+  };
+  image.onerror = () => { if (request === artworkColorRequest) setMiniEdgeColor(); };
+  image.src = source;
+}
 function drawVisualizer() {
   const canvas = ui.artwork.querySelector('.visualizer');
   const bounds = canvas.getBoundingClientRect();
@@ -76,11 +113,41 @@ function drawVisualizer() {
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
   const width = bounds.width, height = bounds.height, levels = new Uint8Array(analyser.frequencyBinCount);
   cancelAnimationFrame(visualizerFrame);
-  const draw = () => {
+  const draw = timestamp => {
     visualizerFrame = requestAnimationFrame(draw);
     context.clearRect(0, 0, width, height);
-    if (audio.paused || audio.ended) { cancelAnimationFrame(visualizerFrame); visualizerFrame = 0; return; }
+    if (audio.paused || audio.ended) {
+      cancelAnimationFrame(visualizerFrame); visualizerFrame = 0;
+      edgeEnergy = 0; edgeBeat = 0; previousBass = 0; previousVisualizerTime = 0;
+      document.querySelector('.window-shell').style.setProperty('--mini-edge-energy', '0');
+      document.querySelector('.window-shell').style.setProperty('--mini-edge-wobble', '0');
+      return;
+    }
     analyser.getByteFrequencyData(levels);
+    if (miniMode) {
+      let total = 0;
+      for (const level of levels) total += level * level;
+      const target = Math.min(1, Math.sqrt(total / levels.length) / 90);
+      edgeEnergy += (target - edgeEnergy) * (target > edgeEnergy ? 0.32 : 0.12);
+      let bassTotal = 0;
+      const bassBins = Math.min(6, levels.length);
+      for (let i = 0; i < bassBins; i++) bassTotal += levels[i] * levels[i];
+      const bass = Math.sqrt(bassTotal / bassBins) / 255;
+      const bassRise = bass - previousBass;
+      if (bass > 0.09 && bassRise > 0.018) edgeBeat = Math.min(1, edgeBeat + Math.min(0.5, bassRise * 4 + 0.12));
+      else edgeBeat *= 0.9;
+      previousBass = bass;
+      const motionEnergy = Math.min(1, edgeEnergy * 0.7 + edgeBeat * 0.75);
+      const shell = document.querySelector('.window-shell');
+      shell.style.setProperty('--mini-edge-energy', motionEnergy.toFixed(3));
+      shell.style.setProperty('--mini-edge-wobble', reduceMotion ? '0' : edgeBeat.toFixed(3));
+      const delta = previousVisualizerTime ? Math.min(0.05, (timestamp - previousVisualizerTime) / 1000) : 1 / 60;
+      previousVisualizerTime = timestamp;
+      if (!reduceMotion) {
+        edgeFlowAngle = (edgeFlowAngle + delta * (22 + motionEnergy * 220)) % 360;
+        shell.style.setProperty('--mini-flow-angle', `${edgeFlowAngle.toFixed(1)}deg`);
+      }
+    }
     const bars = 28, gap = 3, barWidth = (width - gap * (bars - 1)) / bars;
     context.fillStyle = 'rgba(255,255,255,.9)';
     for (let i = 0; i < bars; i++) {
@@ -89,7 +156,7 @@ function drawVisualizer() {
       context.fillRect(i * (barWidth + gap), (height - barHeight) / 2, barWidth, barHeight);
     }
   };
-  draw();
+  draw(performance.now());
 }
 function startVisualizer() {
   try {
@@ -106,6 +173,10 @@ function stopVisualizer() {
   cancelAnimationFrame(visualizerFrame); visualizerFrame = 0;
   const canvas = ui.artwork.querySelector('.visualizer'), context = canvas.getContext('2d');
   context.setTransform(1, 0, 0, 1, 0, 0); context.clearRect(0, 0, canvas.width, canvas.height);
+  edgeEnergy = 0;
+  edgeBeat = 0; previousBass = 0; previousVisualizerTime = 0;
+  document.querySelector('.window-shell').style.setProperty('--mini-edge-energy', '0');
+  document.querySelector('.window-shell').style.setProperty('--mini-edge-wobble', '0');
 }
 function setTrackCount() {
   const playlist = playbackSource?.type === 'playlist' ? playlists.find(item => item.id === playbackSource.id) : null;
@@ -120,9 +191,11 @@ function updatePlaybackHeader() {
 }
 function updateNowPlaying() {
   const track = tracks[currentIndex];
+  const hasArtwork = ui.artwork.classList.contains('has-art');
   ui.nowPlayingTitle.textContent = track?.title || track?.filename?.replace(/\.[^.]+$/, '') || 'Not Playing';
   ui.nowPlayingArtist.textContent = track?.artist || (track ? 'Unknown artist' : 'Choose a song');
-  ui.nowPlayingArt.style.backgroundImage = ui.artwork.classList.contains('has-art') ? ui.artwork.style.backgroundImage : '';
+  ui.nowPlayingArt.style.backgroundImage = hasArtwork ? ui.artwork.style.backgroundImage : '';
+  ui.nowPlayingArt.classList.toggle('has-art', hasArtwork);
 }
 function renderPlaylists() {
   ui.homeSongCount.textContent = `${tracks.length} ${tracks.length === 1 ? 'song' : 'songs'}`;
@@ -371,17 +444,24 @@ async function selectFolder() {
   } catch { showToast('Could not open that folder'); }
 }
 function resetArtwork() {
+  artworkColorRequest++;
+  edgeEnergy = 0;
+  edgeBeat = 0; previousBass = 0; previousVisualizerTime = 0;
+  document.querySelector('.window-shell').style.setProperty('--mini-edge-energy', '0');
+  document.querySelector('.window-shell').style.setProperty('--mini-edge-wobble', '0');
+  setMiniEdgeColor('255,255,255');
   ui.artwork.classList.remove('has-art');
   ui.artwork.style.backgroundImage = '';
   ui.artworkWrap.style.setProperty('--cover-glow', '');
   ui.artwork.querySelector('.cover-glyph').textContent = '?';
   updateNowPlaying();
 }
-async function playTrack(index) {
+async function playTrack(index, autoplay = true) {
   if (!tracks.length) { showToast('Choose a music folder first'); return; }
   if (!playbackSource) playbackSource = { type: 'all' };
   currentIndex = (index + tracks.length) % tracks.length;
   const track = tracks[currentIndex];
+  localStorage.setItem('lastPlayedTrack', track.path);
   const request = ++trackRequest;
   audio.src = track.url;
   audio.load();
@@ -389,7 +469,8 @@ async function playTrack(index) {
   ui.trackArtist.textContent = 'Loading track information…';
   updatePlaybackHeader();
   resetArtwork(); updateFavorite(); updateNowPlaying(); renderQueue();
-  const playback = audio.play().then(() => true).catch(() => false);
+  const playback = autoplay ? audio.play().then(() => true).catch(() => false) : Promise.resolve(true);
+  if (!autoplay) setPlaying(false);
   try {
     const info = await window.player.getTrackInfo(track.path);
     track.title = info?.title || track.filename.replace(/\.[^.]+$/, '');
@@ -401,6 +482,7 @@ async function playTrack(index) {
       if (info?.artwork) {
         ui.artwork.style.backgroundImage = `url("${info.artwork}")`;
         ui.artwork.classList.add('has-art');
+        readArtworkEdgeColor(info.artwork);
       }
       updateNowPlaying();
       if (info?.duration && !Number.isFinite(audio.duration)) ui.duration.textContent = formatTime(info.duration);
@@ -442,11 +524,27 @@ ui.defaultAudioButton.addEventListener('click', async () => {
   if (!await window.player.openDefaultApps('audio')) showToast('Install MyPlayer to register MyMusic with Windows.');
 });
 ui.colorNotesToggle.checked = colorfulNotes;
+ui.miniEdgeColorToggle.checked = coloredMiniEdges;
 ui.homeNotes.classList.toggle('color-notes-on', colorfulNotes);
 ui.colorNotesToggle.addEventListener('change', () => {
   colorfulNotes = ui.colorNotesToggle.checked;
   localStorage.setItem('colorfulNotes', String(colorfulNotes));
   ui.homeNotes.classList.toggle('color-notes-on', colorfulNotes);
+});
+ui.miniEdgeColorToggle.addEventListener('change', () => {
+  coloredMiniEdges = ui.miniEdgeColorToggle.checked;
+  localStorage.setItem('coloredMiniEdges', String(coloredMiniEdges));
+  setMiniEdgeColor();
+});
+ui.settingsColorToggle.addEventListener('click', () => {
+  const expanded = ui.settingsColorToggle.getAttribute('aria-expanded') !== 'true';
+  ui.settingsColorToggle.setAttribute('aria-expanded', String(expanded));
+  ui.settingsColorOptions.hidden = !expanded;
+});
+ui.settingsPlaylistToggle.addEventListener('click', () => {
+  const expanded = ui.settingsPlaylistToggle.getAttribute('aria-expanded') !== 'true';
+  ui.settingsPlaylistToggle.setAttribute('aria-expanded', String(expanded));
+  ui.settingsPlaylistList.hidden = !expanded;
 });
 ui.homeCloseButton.addEventListener('click', () => window.player.close());
 ui.homeMinimizeButton.addEventListener('click', () => window.player.minimize());
@@ -554,6 +652,7 @@ if (startupAudioPath) {
   const separator = Math.max(startupAudioPath.lastIndexOf('\\'), startupAudioPath.lastIndexOf('/'));
   const startupFolder = separator === 2 && startupAudioPath[1] === ':' ? startupAudioPath.slice(0, 3) : startupAudioPath.slice(0, separator);
   folder = startupFolder;
+  localStorage.setItem('musicFolder', folder);
   window.player.scanFolder(startupFolder).then(found => {
     tracks = found; restoreTrackOrder(); setTrackCount(); renderQueue(); renderPlaylists();
     const index = tracks.findIndex(track => track.path.toLocaleLowerCase() === startupAudioPath.toLocaleLowerCase());
@@ -564,6 +663,11 @@ if (startupAudioPath) {
   window.player.scanFolder(folder).then(found => {
     tracks = found; restoreTrackOrder(); setTrackCount(); renderQueue(); renderPlaylists();
     if (!tracks.length) { ui.trackTitle.textContent = 'No music found'; ui.trackArtist.textContent = 'Choose a folder to get started'; }
+    else {
+      const lastPath = localStorage.getItem('lastPlayedTrack');
+      const lastIndex = tracks.findIndex(track => track.path.toLocaleLowerCase() === lastPath?.toLocaleLowerCase());
+      if (lastIndex >= 0) { playbackSource = { type: 'all' }; playbackPaths = null; void playTrack(lastIndex, false); }
+    }
   }).catch(() => showToast('Your saved music folder is unavailable'));
 }
 populateMusicNotes(); renderPlaylists(); showHome(); updateNowPlaying();
