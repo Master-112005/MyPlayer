@@ -1,6 +1,6 @@
 {
   "name": "myplayer",
-  "version": "1.0.8",
+  "version": "1.0.10",
   "description": "A black and white Liquid Glass desktop music and video player",
   "main": "src/main.cjs",
   "author": "MyPlayer",

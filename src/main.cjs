@@ -257,19 +257,30 @@ ipcMain.handle('set-app-mode', (_event, mode) => {
 });
 ipcMain.handle('track-info', async (_event, filePath) => {
   if (typeof filePath !== 'string') return null;
+  let metadata;
   try {
     const { parseFile } = await import('music-metadata');
-    const metadata = await parseFile(filePath, { skipCovers: false, duration: true });
-    const picture = metadata.common.picture?.[0];
-    return {
-      title: metadata.common.title || path.basename(filePath, path.extname(filePath)),
-      artist: metadata.common.artist || metadata.common.albumartist || 'Unknown artist',
-      album: metadata.common.album || '', duration: metadata.format.duration || 0,
-      artwork: picture ? `data:${picture.format};base64,${picture.data.toString('base64')}` : null
-    };
-  } catch {
-    return { title: path.basename(filePath, path.extname(filePath)), artist: 'Unknown artist', album: '', duration: 0, artwork: null };
+    metadata = await parseFile(filePath, { skipCovers: false, duration: true });
+  } catch {}
+  const picture = metadata?.common.picture?.[0];
+  let artwork = picture?.data?.length
+    ? `data:${picture.format?.startsWith('image/') ? picture.format : 'image/jpeg'};base64,${Buffer.from(picture.data).toString('base64')}`
+    : null;
+  if (!artwork) {
+    try {
+      const directory = path.dirname(filePath);
+      const imageTypes = new Map([['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'], ['.png', 'image/png'], ['.webp', 'image/webp'], ['.avif', 'image/avif']]);
+      const entries = await fs.readdir(directory, { withFileTypes: true });
+      const cover = entries.find(entry => entry.isFile() && /^(cover|folder|album|front)\.(jpg|jpeg|png|webp|avif)$/i.test(entry.name));
+      if (cover) artwork = `data:${imageTypes.get(path.extname(cover.name).toLowerCase())};base64,${(await fs.readFile(path.join(directory, cover.name))).toString('base64')}`;
+    } catch {}
   }
+  return {
+    title: metadata?.common.title || path.basename(filePath, path.extname(filePath)),
+    artist: metadata?.common.artist || metadata?.common.albumartist || 'Unknown artist',
+    album: metadata?.common.album || '', duration: metadata?.format.duration || 0,
+    artwork
+  };
 });
 ipcMain.handle('set-mini-mode', (_event, mini) => {
   if (!mainWindow || typeof mini !== 'boolean') return false;

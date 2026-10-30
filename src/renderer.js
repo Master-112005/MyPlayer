@@ -493,6 +493,19 @@ ui.playButton.addEventListener('click', async () => {
   if (audio.paused) { try { await audio.play(); } catch { showToast('This audio format could not be played by Windows'); } }
   else audio.pause();
 });
+window.addEventListener('keydown', event => {
+  if (document.documentElement.dataset.appMode !== 'music' || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || document.querySelector('dialog[open]')) return;
+  const target = event.target;
+  if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [contenteditable="true"]'))) return;
+  if (event.code === 'Space') {
+    if (target instanceof HTMLElement && target.closest('button')) return;
+    event.preventDefault(); ui.playButton.click();
+  } else if (event.code === 'ArrowLeft') {
+    event.preventDefault(); ui.previousButton.click();
+  } else if (event.code === 'ArrowRight') {
+    event.preventDefault(); ui.nextButton.click();
+  }
+});
 ui.previousButton.addEventListener('click', () => {
   if (audio.currentTime > 3 && currentIndex >= 0) { audio.currentTime = 0; return; }
   moveTrack(-1);
