@@ -10,10 +10,48 @@ function replace(relativePath, before, after, marker) {
   fs.writeFileSync(file, text.replace(before, after));
 }
 
+{
+  const file = path.join(root, 'native/mpv-addon/src/mpv_addon.cc');
+  let text = fs.readFileSync(file, 'utf8').replace(/^[ \t]*set_option\("panscan", "1"\);\r?\n/gm, '');
+  if (!text.includes('set_option("panscan", "0");')) {
+    text = text.replace('    set_option("audio-display", "no");\n', '    set_option("audio-display", "no");\n    set_option("panscan", "0");\n');
+  }
+  fs.writeFileSync(file, text);
+}
+
 replace('native/mpv-addon/src/mpv_addon.cc',
-  '    set_option("audio-display", "no");\n',
-  '    set_option("audio-display", "no");\n    set_option("panscan", "1");\n',
-  'set_option("panscan", "1")');
+  '      InstanceMethod("setVolume", &MpvPlayer::SetVolume),\n',
+  '      InstanceMethod("setVolume", &MpvPlayer::SetVolume),\n      InstanceMethod("setPanScan", &MpvPlayer::SetPanScan),\n',
+  'InstanceMethod("setPanScan"');
+replace('native/mpv-addon/src/mpv_addon.cc',
+  '  Napi::Value SetVolume(const Napi::CallbackInfo& info) {',
+  '  Napi::Value SetPanScan(const Napi::CallbackInfo& info) {\n    Napi::Env env = info.Env();\n    if (info.Length() < 1 || !info[0].IsNumber()) {\n      Napi::TypeError::New(env, "setPanScan(value) requires a number").ThrowAsJavaScriptException();\n      return env.Undefined();\n    }\n    double value = std::clamp(info[0].As<Napi::Number>().DoubleValue(), 0.0, 1.0);\n    int ret = mpv_set_property(handle_, "panscan", MPV_FORMAT_DOUBLE, &value);\n    if (ret < 0) throw_mpv_error(env, "setPanScan", ret);\n    return env.Undefined();\n  }\n\n  Napi::Value SetVolume(const Napi::CallbackInfo& info) {',
+  'Napi::Value SetPanScan');
+{
+  const file = path.join(root, 'native/mpv-addon/src/mpv_addon.cc');
+  let text = fs.readFileSync(file, 'utf8');
+  if (text.includes('observe("dwidth", MPV_FORMAT_INT64);') && !text.includes('observe("width", MPV_FORMAT_INT64);')) {
+    text = text.replace('    observe("dwidth", MPV_FORMAT_INT64);\n', '    observe("width", MPV_FORMAT_INT64);\n    observe("height", MPV_FORMAT_INT64);\n    observe("dwidth", MPV_FORMAT_INT64);\n');
+  }
+  fs.writeFileSync(file, text);
+}
+replace('native/mpv-addon/src/mpv_addon.cc',
+  '    observe("width", MPV_FORMAT_INT64);\n    observe("height", MPV_FORMAT_INT64);\n',
+  '    observe("width", MPV_FORMAT_INT64);\n    observe("height", MPV_FORMAT_INT64);\n    observe("dwidth", MPV_FORMAT_INT64);\n    observe("dheight", MPV_FORMAT_INT64);\n',
+  'observe("dwidth"');
+{
+  const file = path.join(root, 'dist/renderer/mpv-video.js');
+  let text = fs.readFileSync(file, 'utf8');
+  if (text.includes("case 'dwidth':") && !text.includes("case 'width':")) {
+    text = text.replace("            case 'dwidth':\n                this.state.width = typeof event.data === 'number' ? event.data : 0;\n                break;\n            case 'dheight':\n                this.state.height = typeof event.data === 'number' ? event.data : 0;\n                break;",
+      "            case 'width':\n                this.state.width = typeof event.data === 'number' ? event.data : 0;\n                break;\n            case 'height':\n                this.state.height = typeof event.data === 'number' ? event.data : 0;\n                break;\n            case 'dwidth':\n                this.state.width = typeof event.data === 'number' && event.data > 0 ? event.data : this.state.width;\n                break;\n            case 'dheight':\n                this.state.height = typeof event.data === 'number' && event.data > 0 ? event.data : this.state.height;\n                break;");
+  }
+  fs.writeFileSync(file, text);
+}
+replace('dist/renderer/mpv-video.js',
+  "            case 'width':\n                this.state.width = typeof event.data === 'number' ? event.data : 0;\n                break;\n            case 'height':\n                this.state.height = typeof event.data === 'number' ? event.data : 0;\n                break;",
+  "            case 'width':\n                this.state.width = typeof event.data === 'number' ? event.data : 0;\n                break;\n            case 'height':\n                this.state.height = typeof event.data === 'number' ? event.data : 0;\n                break;\n            case 'dwidth':\n                this.state.width = typeof event.data === 'number' && event.data > 0 ? event.data : this.state.width;\n                break;\n            case 'dheight':\n                this.state.height = typeof event.data === 'number' && event.data > 0 ? event.data : this.state.height;\n                break;",
+  "case 'dwidth'");
 
 replace('native/mpv-addon/src/mpv_addon.cc',
   '      InstanceMethod("setVolume", &MpvPlayer::SetVolume),\n',
@@ -35,6 +73,30 @@ replace('dist/main/mpv-service.js',
   "        electron.ipcMain.handle(channel('player:set-volume'), async (event, id, value) => this.getOwnedSession(event, id).setVolume(finiteNumber(value, 'volume')));\n",
   "        electron.ipcMain.handle(channel('player:set-volume'), async (event, id, value) => this.getOwnedSession(event, id).setVolume(finiteNumber(value, 'volume')));\n        electron.ipcMain.handle(channel('player:cycle-audio-track'), async (event, id) => this.getOwnedSession(event, id).cycleAudioTrack());\n        electron.ipcMain.handle(channel('player:cycle-subtitle-track'), async (event, id) => this.getOwnedSession(event, id).cycleSubtitleTrack());\n",
   "handle(channel('player:cycle-audio-track')");
+replace('dist/main/mpv-service.js',
+  "    'player:set-volume',\n",
+  "    'player:set-volume',\n    'player:set-panscan',\n",
+  "'player:set-panscan'");
+replace('dist/main/mpv-service.js',
+  '    setVolume(value) {\n        this.assertAlive();',
+  '    setPanScan(value) {\n        this.assertAlive();\n        const nextValue = Math.max(0, Math.min(1, finiteNumber(value, \'panscan\')));\n        this.player.setPanScan(nextValue);\n    }\n    setVolume(value) {\n        this.assertAlive();',
+  '    setPanScan(value)');
+replace('dist/main/mpv-service.js',
+  "        electron.ipcMain.handle(channel('player:set-volume'), async (event, id, value) => this.getOwnedSession(event, id).setVolume(finiteNumber(value, 'volume')));\n",
+  "        electron.ipcMain.handle(channel('player:set-volume'), async (event, id, value) => this.getOwnedSession(event, id).setVolume(finiteNumber(value, 'volume')));\n        electron.ipcMain.handle(channel('player:set-panscan'), async (event, id, value) => this.getOwnedSession(event, id).setPanScan(finiteNumber(value, 'panscan')));\n",
+  "handle(channel('player:set-panscan')");
+replace('dist/preload/index.cjs',
+  '        setVolume: (value) => electron.ipcRenderer.invoke(channel(\'player:set-volume\'), id, value),\n',
+  '        setVolume: (value) => electron.ipcRenderer.invoke(channel(\'player:set-volume\'), id, value),\n        setPanScan: (value) => electron.ipcRenderer.invoke(channel(\'player:set-panscan\'), id, value),\n',
+  'setPanScan: (value)');
+replace('dist/renderer/mpv-video.js',
+  '    async setVolume(value) {\n',
+  '    async setPanScan(value) {\n        await this.ensureReady();\n        await this.player?.setPanScan(value);\n    }\n    async setVolume(value) {\n',
+  '    async setPanScan(value)');
+replace('dist/renderer/mpv-video.d.ts',
+  '    setVolume(value: number): Promise<void>;\n',
+  '    setVolume(value: number): Promise<void>;\n    setPanScan(value: number): Promise<void>;\n',
+  'setPanScan(value: number)');
 replace('dist/preload/index.cjs',
   "        setVolume: (value) => electron.ipcRenderer.invoke(channel('player:set-volume'), id, value),\n",
   "        setVolume: (value) => electron.ipcRenderer.invoke(channel('player:set-volume'), id, value),\n        cycleAudioTrack: () => electron.ipcRenderer.invoke(channel('player:cycle-audio-track'), id),\n        cycleSubtitleTrack: () => electron.ipcRenderer.invoke(channel('player:cycle-subtitle-track'), id),\n",

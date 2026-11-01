@@ -99,6 +99,7 @@ async function openVideo(filePath, title) {
   lastAspect = 0;
   if (progressTimer) clearInterval(progressTimer);
   try {
+    await video.setPanScan(fullscreen ? 0 : 1);
     await video.open(filePath);
     const saved = await window.player.getVideoResume(filePath);
     const { duration } = await video.getPlaybackInfo();
@@ -243,6 +244,7 @@ async function setFullscreen(requested) {
 }
 function updateFullscreenUi(active) {
   fullscreen = active;
+  void video.setPanScan(active ? 0 : 1).catch(error => reportError(`Video fit update failed: ${error.message || error}`));
   document.documentElement.classList.toggle('fullscreen-mode', active);
   $('fullscreen').setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen');
   $('fullscreen').title = active ? 'Exit fullscreen' : 'Fullscreen';
