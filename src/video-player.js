@@ -10,9 +10,11 @@ let hideTimer;
 let leaveTimer;
 let progressTimer;
 let progressPending = false;
+let volumeFrame = 0;
 let closing = false;
 let moving = false;
 let scrubbing = false;
+let playbackDuration = 0;
 let lastAspect = 0;
 let fullscreen = false;
 let volumeLevel = Number($('volume').value) || 75;
@@ -44,13 +46,28 @@ function reportError(message) {
   $('error').textContent = message;
   $('error').classList.remove('hidden');
 }
+function applyVolume() {
+  if (volumeFrame) return;
+  volumeFrame = requestAnimationFrame(() => {
+    volumeFrame = 0;
+    video.setVolume(volumeLevel).catch(error => reportError(`Volume change failed: ${error.message || error}`));
+  });
+}
 async function updateProgress() {
-  if (closing || progressPending || !video.playerId) return;
+  if (closing || !video.playerId) return;
+  if (scrubbing && playbackDuration) {
+    const current = Number($('timeline').value) / 1000 * playbackDuration;
+    $('currentTime').textContent = timeText(current);
+    $('remainingTime').textContent = `-${timeText(Math.max(0, playbackDuration - current))}`;
+    return;
+  }
+  if (progressPending) return;
   progressPending = true;
   try {
   const info = await video.getPlaybackInfo();
   const duration = Number(info.duration) || 0;
   const current = Number(info.currentTime) || 0;
+  playbackDuration = duration;
   setPlaying(!info.paused);
   $('currentTime').textContent = timeText(scrubbing ? Number($('timeline').value) / 1000 * duration : current);
   $('remainingTime').textContent = `-${timeText(Math.max(0, duration - (scrubbing ? Number($('timeline').value) / 1000 * duration : current)))}`;
@@ -78,13 +95,16 @@ async function openVideo(filePath, title) {
   $('timeline').value = '0';
   $('currentTime').textContent = '0:00';
   $('remainingTime').textContent = '-0:00';
+  playbackDuration = 0;
   lastAspect = 0;
   if (progressTimer) clearInterval(progressTimer);
-  progressTimer = setInterval(updateProgress, 200);
   try {
     await video.open(filePath);
     const saved = await window.player.getVideoResume(filePath);
     const { duration } = await video.getPlaybackInfo();
+    playbackDuration = Number(duration) || 0;
+    progressTimer = setInterval(updateProgress, 500);
+    void updateProgress();
     if (saved?.position >= 10 && saved.position < (duration || saved.duration) - 10) {
       pendingResume = { filePath, position: saved.position };
       const prompt = $('resumePrompt');
@@ -98,6 +118,8 @@ async function openVideo(filePath, title) {
       }, 5000);
     } else await video.play();
   } catch (error) {
+    clearInterval(progressTimer);
+    progressTimer = null;
     reportError(`Could not play this video: ${error.message || error}`);
   }
 }
@@ -209,7 +231,7 @@ function setVolume(level) {
   muteButton.innerHTML = muted
     ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="m16 9 5 6m0-6-5 6"/></svg>'
     : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12 0a5 5 0 0 1 0 6"/></svg>';
-  video.setVolume(volumeLevel).catch(error => reportError(`Volume change failed: ${error.message || error}`));
+  applyVolume();
   showControls();
 }
 async function setFullscreen(requested) {
@@ -251,7 +273,7 @@ $('forward').addEventListener('click', () => seekBy(10));
 $('audioTrack').addEventListener('click', event => showTrackMenu('audio', event.currentTarget));
 $('subtitleTrack').addEventListener('click', event => showTrackMenu('sub', event.currentTarget));
 $('timeline').addEventListener('pointerdown', () => { scrubbing = true; });
-$('timeline').addEventListener('input', updateProgress);
+$('timeline').addEventListener('input', () => { scrubbing = true; updateProgress(); });
 $('timeline').addEventListener('change', async () => {
   try {
     const { duration } = await video.getPlaybackInfo();

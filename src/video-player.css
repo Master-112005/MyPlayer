@@ -105,5 +105,7 @@ html.fullscreen-mode mpv-video{border-radius:0}
 
 @property --scroll-fade-top{syntax:"<length>";inherits:false;initial-value:0px}
 @property --scroll-fade-bottom{syntax:"<length>";inherits:false;initial-value:0px}
-.scroll-edge-fade{-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 var(--scroll-fade-top),#000 calc(100% - var(--scroll-fade-bottom)),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,#000 var(--scroll-fade-top),#000 calc(100% - var(--scroll-fade-bottom)),transparent 100%);transition:--scroll-fade-top 160ms ease-out,--scroll-fade-bottom 160ms ease-out}
+.scroll-edge-fade{-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 var(--scroll-fade-top),#000 calc(100% - var(--scroll-fade-bottom)),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,#000 var(--scroll-fade-top),#000 calc(100% - var(--scroll-fade-bottom)),transparent 100%);--scroll-fade-top:0px;--scroll-fade-bottom:0px;transition:--scroll-fade-top 160ms ease-out,--scroll-fade-bottom 160ms ease-out}
+.scroll-edge-fade.scroll-fade-top{--scroll-fade-top:24px}
+.scroll-edge-fade.scroll-fade-bottom{--scroll-fade-bottom:24px}
 @media(prefers-reduced-motion:reduce){.scroll-edge-fade{transition:none}}

@@ -55,6 +55,7 @@ let visualizerContext, analyser, visualizerFrame;
 let edgeEnergy = 0;
 let edgeBeat = 0;
 let edgeFlowAngle = 0;
+let lastEdgeStyleTime = 0;
 let previousBass = 0;
 let previousVisualizerTime = 0;
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -166,6 +167,7 @@ function readArtworkEdgeColor(source) {
 }
 function drawVisualizer() {
   const canvas = ui.visualizer;
+  const shell = document.querySelector('.window-shell');
   const bounds = canvas.getBoundingClientRect();
   const ratio = window.devicePixelRatio || 1;
   if (canvas.width !== Math.round(bounds.width * ratio) || canvas.height !== Math.round(bounds.height * ratio)) {
@@ -181,8 +183,8 @@ function drawVisualizer() {
     if (audio.paused || audio.ended) {
       cancelAnimationFrame(visualizerFrame); visualizerFrame = 0;
       edgeEnergy = 0; edgeBeat = 0; previousBass = 0; previousVisualizerTime = 0;
-      document.querySelector('.window-shell').style.setProperty('--mini-edge-energy', '0');
-      document.querySelector('.window-shell').style.setProperty('--mini-edge-wobble', '0');
+      shell.style.setProperty('--mini-edge-energy', '0');
+      shell.style.setProperty('--mini-edge-wobble', '0');
       return;
     }
     analyser.getByteFrequencyData(levels);
@@ -199,19 +201,21 @@ function drawVisualizer() {
     else edgeBeat *= 0.9;
     previousBass = bass;
     const motionEnergy = Math.min(1, edgeEnergy * 0.7 + edgeBeat * 0.75);
-    ui.artworkWrap.style.setProperty('--artwork-edge-energy', motionEnergy.toFixed(3));
-    ui.artworkWrap.style.setProperty('--artwork-edge-wobble', reduceMotion ? '0' : edgeBeat.toFixed(3));
     const delta = previousVisualizerTime ? Math.min(0.05, (timestamp - previousVisualizerTime) / 1000) : 1 / 60;
     previousVisualizerTime = timestamp;
-    if (!reduceMotion) {
-      edgeFlowAngle = (edgeFlowAngle + delta * (14 + (1 - motionEnergy) * 150)) % 360;
-      ui.artworkWrap.style.setProperty('--artwork-flow-angle', `${edgeFlowAngle.toFixed(1)}deg`);
-    }
-    if (miniMode) {
-      const shell = document.querySelector('.window-shell');
-      shell.style.setProperty('--mini-edge-energy', motionEnergy.toFixed(3));
-      shell.style.setProperty('--mini-edge-wobble', reduceMotion ? '0' : edgeBeat.toFixed(3));
-      if (!reduceMotion) shell.style.setProperty('--mini-flow-angle', `${edgeFlowAngle.toFixed(1)}deg`);
+    if (timestamp - lastEdgeStyleTime >= 1000 / 30) {
+      lastEdgeStyleTime = timestamp;
+      ui.artworkWrap.style.setProperty('--artwork-edge-energy', motionEnergy.toFixed(3));
+      ui.artworkWrap.style.setProperty('--artwork-edge-wobble', reduceMotion ? '0' : edgeBeat.toFixed(3));
+      if (!reduceMotion) {
+        edgeFlowAngle = (edgeFlowAngle + delta * (14 + (1 - motionEnergy) * 150)) % 360;
+        ui.artworkWrap.style.setProperty('--artwork-flow-angle', `${edgeFlowAngle.toFixed(1)}deg`);
+      }
+      if (miniMode) {
+        shell.style.setProperty('--mini-edge-energy', motionEnergy.toFixed(3));
+        shell.style.setProperty('--mini-edge-wobble', reduceMotion ? '0' : edgeBeat.toFixed(3));
+        if (!reduceMotion) shell.style.setProperty('--mini-flow-angle', `${edgeFlowAngle.toFixed(1)}deg`);
+      }
     }
     const bars = 34, gap = 2, barWidth = (width - gap * (bars - 1)) / bars;
     const waveform = context.createLinearGradient(0, height * .2, 0, height * .8);
@@ -247,6 +251,7 @@ function stopVisualizer() {
   context.setTransform(1, 0, 0, 1, 0, 0); context.clearRect(0, 0, canvas.width, canvas.height);
   edgeEnergy = 0;
   edgeBeat = 0; previousBass = 0; previousVisualizerTime = 0;
+  lastEdgeStyleTime = 0;
   ui.artworkWrap.style.setProperty('--artwork-edge-energy', '0');
   ui.artworkWrap.style.setProperty('--artwork-edge-wobble', '0');
   ui.artworkWrap.style.setProperty('--artwork-flow-angle', `${edgeFlowAngle.toFixed(1)}deg`);

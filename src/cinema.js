@@ -311,6 +311,8 @@ document.addEventListener('keydown', event => {
   }
 });
 populateCinemaNotes();
+window.addEventListener('blur', () => cinemaView.classList.add('cinema-idle'));
+window.addEventListener('focus', () => cinemaView.classList.remove('cinema-idle'));
 
 const mode = new URLSearchParams(location.search).get('app') === 'cinema' ? 'cinema' : 'music';
 document.title = mode === 'cinema' ? 'MyCinema' : 'MyMusic';

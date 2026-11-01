@@ -5,9 +5,11 @@
     const update = () => {
       frame = 0;
       const canScroll = element.scrollHeight > element.clientHeight + 1;
-      element.classList.toggle('scroll-edge-fade', canScroll);
-      element.style.setProperty('--scroll-fade-top', canScroll && element.scrollTop > 1 ? '24px' : '0px');
-      element.style.setProperty('--scroll-fade-bottom', canScroll && element.scrollTop + element.clientHeight < element.scrollHeight - 1 ? '24px' : '0px');
+      const fadeTop = canScroll && element.scrollTop > 1;
+      const fadeBottom = canScroll && element.scrollTop + element.clientHeight < element.scrollHeight - 1;
+      element.classList.toggle('scroll-edge-fade', fadeTop || fadeBottom);
+      element.classList.toggle('scroll-fade-top', fadeTop);
+      element.classList.toggle('scroll-fade-bottom', fadeBottom);
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
     element.addEventListener('scroll', schedule, { passive: true });
