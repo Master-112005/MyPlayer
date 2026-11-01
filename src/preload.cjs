@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const { pathToFileURL } = require('node:url');
 require('electron-mpv-video/preload').exposeMpvApi();
 
 contextBridge.exposeInMainWorld('player', {
@@ -8,6 +9,7 @@ contextBridge.exposeInMainWorld('player', {
   getTrackSearchInfo: filePath => ipcRenderer.invoke('track-search-info', filePath),
   chooseVideoFolder: () => ipcRenderer.invoke('choose-video-folder'),
   scanVideoFolder: folder => ipcRenderer.invoke('scan-video-folder', folder),
+  videoFileUrl: filePath => typeof filePath === 'string' ? pathToFileURL(filePath).href : '',
   openVideoWindow: (filePath, title) => ipcRenderer.invoke('open-video-window', filePath, title),
   getVideoResume: filePath => ipcRenderer.invoke('video-resume-get', filePath),
   saveVideoResume: (filePath, position, duration) => ipcRenderer.invoke('video-resume-save', filePath, position, duration),

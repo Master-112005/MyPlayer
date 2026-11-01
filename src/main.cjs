@@ -211,7 +211,7 @@ async function scanVideoFolder(folder) {
     for (const entry of entries) {
       const fullPath = path.join(current, entry.name);
       if (entry.isDirectory() && !entry.name.startsWith('.')) pending.push(fullPath);
-      else if (entry.isFile() && videoExtensions.has(path.extname(entry.name).toLowerCase())) videos.push({ path: fullPath, title: path.basename(entry.name, path.extname(entry.name)), filename: entry.name });
+      else if (entry.isFile() && videoExtensions.has(path.extname(entry.name).toLowerCase())) videos.push({ path: fullPath, folder: current, title: path.basename(entry.name, path.extname(entry.name)), filename: entry.name });
     }
   }
   return videos.sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' }));
@@ -220,7 +220,7 @@ ipcMain.handle('choose-video-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, { title: 'Choose your video folder', properties: ['openDirectory'] });
   if (result.canceled || !result.filePaths[0]) return null;
   const folder = result.filePaths[0];
-  return { folder, videos: await scanVideoFolder(folder) };
+  return { folder };
 });
 ipcMain.handle('scan-video-folder', async (_event, folder) => typeof folder === 'string' ? scanVideoFolder(folder) : []);
 ipcMain.handle('open-default-apps', async (event, kind) => {
