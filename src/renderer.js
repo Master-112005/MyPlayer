@@ -1,13 +1,13 @@
 const audio = document.getElementById('audio');
 const $ = id => document.getElementById(id);
 const ui = {
-  searchButton: $('searchButton'), searchInput: $('searchInput'), modeToggle: $('modeToggle'), minimizeButton: $('minimizeButton'), closeButton: $('closeButton'),
+  searchButton: $('searchButton'), searchInput: $('searchInput'), modeToggle: $('modeToggle'), minimizeButton: $('minimizeButton'), closeButton: $('closeButton'), playerBackButton: $('playerBackButton'),
   playButton: $('playButton'), previousButton: $('previousButton'), nextButton: $('nextButton'),
   shuffleButton: $('shuffleButton'), queueButton: $('queueButton'), homeButton: $('homeButton'),
   favoriteButton: $('favoriteButton'), seekBar: $('seekBar'), volumeBar: $('volumeBar'), volumeMuteButton: $('volumeMuteButton'),
   volumeValue: $('volumeValue'), currentTime: $('currentTime'), duration: $('duration'),
   trackTitle: $('trackTitle'), trackArtist: $('trackArtist'), trackCount: $('trackCount'), libraryLabel: $('libraryLabel'),
-  artwork: $('artwork'), artworkWrap: $('artworkWrap'), queuePanel: $('queuePanel'), queueList: $('queueList'),
+  artwork: $('artwork'), artworkWrap: $('artworkWrap'), visualizer: $('visualizer'), queuePanel: $('queuePanel'), queueList: $('queueList'),
   toast: $('toast'), homeTitle: $('homeTitle'), homeShortcuts: $('homeShortcuts'), homeLibrary: $('homeLibrary'), sortToolbar: $('sortToolbar'), sortBy: $('sortBy'), sortPickerButton: $('sortPickerButton'), sortPickerValue: $('sortPickerValue'), sortPickerOptions: $('sortPickerOptions'), settingsView: $('settingsView'),
   playlistGrid: $('playlistGrid'), homeSongCount: $('homeSongCount'), favoriteSongCount: $('favoriteSongCount'), settingsPlaylistList: $('settingsPlaylistList'), homeNotes: $('homeNotes'), colorNotesToggle: $('colorNotesToggle'), homeSearch: document.querySelector('.home-search'), homeSearchButton: $('homeSearchButton'), homeCreatePlaylistButton: $('homeCreatePlaylistButton'), homeSettingsButton: $('homeSettingsButton'), homeHomeButton: $('homeHomeButton'), playlistBackButton: $('playlistBackButton'), homeCloseButton: $('homeCloseButton'), homeMinimizeButton: $('homeMinimizeButton'), settingsFolderButton: $('settingsFolderButton'), settingsRescanButton: $('settingsRescanButton'), defaultAudioButton: $('defaultAudioButton'),
   allSongsCard: $('allSongsCard'), favoritesCard: $('favoritesCard'), playlistDialog: $('playlistDialog'), playlistForm: $('playlistForm'), miniEdgeColorToggle: $('miniEdgeColorToggle'), settingsColorToggle: $('settingsColorToggle'), settingsColorOptions: $('settingsColorOptions'), settingsPlaylistToggle: $('settingsPlaylistToggle'),
@@ -138,6 +138,7 @@ function setMuted(muted) {
 function setMiniEdgeColor(rgb) {
   if (rgb) artworkEdgeRgb = rgb;
   document.querySelector('.window-shell').style.setProperty('--mini-edge-rgb', coloredMiniEdges ? artworkEdgeRgb : '255,255,255');
+  ui.artworkWrap.style.setProperty('--artwork-rgb', artworkEdgeRgb);
 }
 function readArtworkEdgeColor(source) {
   const request = ++artworkColorRequest;
@@ -156,7 +157,7 @@ function readArtworkEdgeColor(source) {
         if (pixels[i + 3] < 100 || lightness < 24 || lightness > 242) continue;
         red += pixels[i]; green += pixels[i + 1]; blue += pixels[i + 2]; count++;
       }
-      const brighten = value => Math.round(value / count * 0.55 + 255 * 0.45);
+      const brighten = value => Math.round(value / count * 0.75 + 255 * 0.25);
       setMiniEdgeColor(count ? `${brighten(red)},${brighten(green)},${brighten(blue)}` : '225,225,225');
     } catch { setMiniEdgeColor(); }
   };
@@ -164,7 +165,7 @@ function readArtworkEdgeColor(source) {
   image.src = source;
 }
 function drawVisualizer() {
-  const canvas = ui.artwork.querySelector('.visualizer');
+  const canvas = ui.visualizer;
   const bounds = canvas.getBoundingClientRect();
   const ratio = window.devicePixelRatio || 1;
   if (canvas.width !== Math.round(bounds.width * ratio) || canvas.height !== Math.round(bounds.height * ratio)) {
@@ -185,36 +186,46 @@ function drawVisualizer() {
       return;
     }
     analyser.getByteFrequencyData(levels);
+    let total = 0;
+    for (const level of levels) total += level * level;
+    const target = Math.min(1, Math.sqrt(total / levels.length) / 90);
+    edgeEnergy += (target - edgeEnergy) * (target > edgeEnergy ? 0.32 : 0.12);
+    let bassTotal = 0;
+    const bassBins = Math.min(6, levels.length);
+    for (let i = 0; i < bassBins; i++) bassTotal += levels[i] * levels[i];
+    const bass = Math.sqrt(bassTotal / bassBins) / 255;
+    const bassRise = bass - previousBass;
+    if (bass > 0.09 && bassRise > 0.018) edgeBeat = Math.min(1, edgeBeat + Math.min(0.5, bassRise * 4 + 0.12));
+    else edgeBeat *= 0.9;
+    previousBass = bass;
+    const motionEnergy = Math.min(1, edgeEnergy * 0.7 + edgeBeat * 0.75);
+    ui.artworkWrap.style.setProperty('--artwork-edge-energy', motionEnergy.toFixed(3));
+    ui.artworkWrap.style.setProperty('--artwork-edge-wobble', reduceMotion ? '0' : edgeBeat.toFixed(3));
+    const delta = previousVisualizerTime ? Math.min(0.05, (timestamp - previousVisualizerTime) / 1000) : 1 / 60;
+    previousVisualizerTime = timestamp;
+    if (!reduceMotion) {
+      edgeFlowAngle = (edgeFlowAngle + delta * (14 + (1 - motionEnergy) * 150)) % 360;
+      ui.artworkWrap.style.setProperty('--artwork-flow-angle', `${edgeFlowAngle.toFixed(1)}deg`);
+    }
     if (miniMode) {
-      let total = 0;
-      for (const level of levels) total += level * level;
-      const target = Math.min(1, Math.sqrt(total / levels.length) / 90);
-      edgeEnergy += (target - edgeEnergy) * (target > edgeEnergy ? 0.32 : 0.12);
-      let bassTotal = 0;
-      const bassBins = Math.min(6, levels.length);
-      for (let i = 0; i < bassBins; i++) bassTotal += levels[i] * levels[i];
-      const bass = Math.sqrt(bassTotal / bassBins) / 255;
-      const bassRise = bass - previousBass;
-      if (bass > 0.09 && bassRise > 0.018) edgeBeat = Math.min(1, edgeBeat + Math.min(0.5, bassRise * 4 + 0.12));
-      else edgeBeat *= 0.9;
-      previousBass = bass;
-      const motionEnergy = Math.min(1, edgeEnergy * 0.7 + edgeBeat * 0.75);
       const shell = document.querySelector('.window-shell');
       shell.style.setProperty('--mini-edge-energy', motionEnergy.toFixed(3));
       shell.style.setProperty('--mini-edge-wobble', reduceMotion ? '0' : edgeBeat.toFixed(3));
-      const delta = previousVisualizerTime ? Math.min(0.05, (timestamp - previousVisualizerTime) / 1000) : 1 / 60;
-      previousVisualizerTime = timestamp;
-      if (!reduceMotion) {
-        edgeFlowAngle = (edgeFlowAngle + delta * (22 + motionEnergy * 220)) % 360;
-        shell.style.setProperty('--mini-flow-angle', `${edgeFlowAngle.toFixed(1)}deg`);
-      }
+      if (!reduceMotion) shell.style.setProperty('--mini-flow-angle', `${edgeFlowAngle.toFixed(1)}deg`);
     }
-    const bars = 28, gap = 3, barWidth = (width - gap * (bars - 1)) / bars;
-    context.fillStyle = 'rgba(255,255,255,.9)';
+    const bars = 34, gap = 2, barWidth = (width - gap * (bars - 1)) / bars;
+    const waveform = context.createLinearGradient(0, height * .2, 0, height * .8);
+    waveform.addColorStop(0, `rgba(${artworkEdgeRgb},.55)`);
+    waveform.addColorStop(.5, `rgba(${artworkEdgeRgb},.98)`);
+    waveform.addColorStop(1, `rgba(${artworkEdgeRgb},.55)`);
+    context.fillStyle = waveform;
     for (let i = 0; i < bars; i++) {
       const value = levels[Math.floor(i * levels.length / bars)] / 255;
-      const barHeight = Math.max(2, value * height);
-      context.fillRect(i * (barWidth + gap), (height - barHeight) / 2, barWidth, barHeight);
+      const barHeight = Math.max(3, value * height * .88);
+      const x = i * (barWidth + gap), y = (height - barHeight) / 2;
+      context.beginPath();
+      context.roundRect(x, y, barWidth, barHeight, barWidth / 2);
+      context.fill();
     }
   };
   draw(performance.now());
@@ -232,10 +243,13 @@ function startVisualizer() {
 }
 function stopVisualizer() {
   cancelAnimationFrame(visualizerFrame); visualizerFrame = 0;
-  const canvas = ui.artwork.querySelector('.visualizer'), context = canvas.getContext('2d');
+  const canvas = ui.visualizer, context = canvas.getContext('2d');
   context.setTransform(1, 0, 0, 1, 0, 0); context.clearRect(0, 0, canvas.width, canvas.height);
   edgeEnergy = 0;
   edgeBeat = 0; previousBass = 0; previousVisualizerTime = 0;
+  ui.artworkWrap.style.setProperty('--artwork-edge-energy', '0');
+  ui.artworkWrap.style.setProperty('--artwork-edge-wobble', '0');
+  ui.artworkWrap.style.setProperty('--artwork-flow-angle', `${edgeFlowAngle.toFixed(1)}deg`);
   document.querySelector('.window-shell').style.setProperty('--mini-edge-energy', '0');
   document.querySelector('.window-shell').style.setProperty('--mini-edge-wobble', '0');
 }
@@ -302,7 +316,7 @@ function showHome(view = 'home', playlistId = null, returnToPlayer = false) {
   ui.playlistBackButton.setAttribute('aria-label', queueReturnToPlayer ? 'Back to player' : 'Back to home');
   ui.homeSettingsButton.classList.toggle('hidden', view === 'settings');
   ui.homeLibrary.classList.toggle('all-songs-view', view === 'all');
-  ui.sortToolbar.classList.toggle('hidden', !['all', 'playlist', 'favorites'].includes(view));
+  ui.sortToolbar.classList.toggle('hidden', queueReturnToPlayer || !['all', 'playlist', 'favorites'].includes(view));
   ui.homeTitle.textContent = view === 'playlist' ? playlist?.name || 'Playlist' : view === 'favorites' ? 'Favorites' : view === 'settings' ? 'Settings' : view === 'search' ? 'Search' : view === 'all' ? 'All Songs' : 'Home';
   ui.queuePanel.classList.remove('search-open'); ui.homeSearch.classList.add('hidden');
   ui.searchInput.value = ''; renderPlaylists(); renderQueue();
@@ -508,9 +522,12 @@ function renderQueue() {
   ui.queueList.replaceChildren();
   const playlist = homeView === 'playlist' ? playlists.find(item => item.id === selectedPlaylistId) : null;
   let visibleTracks = playlist ? playlist.tracks.map(path => tracks.find(track => track.path === path)).filter(Boolean) : homeView === 'favorites' ? tracks.filter(track => favorites.has(track.path)) : tracks;
-  const activeShuffleOrder = queueReturnToPlayer && shuffle && playbackPaths?.length && ((homeView === 'playlist' && playbackSource?.type === 'playlist' && playbackSource.id === playlist?.id) || (homeView === 'favorites' && playbackSource?.type === 'favorites') || (homeView === 'all' && playbackSource?.type === 'all'));
-  if (activeShuffleOrder) {
-    const order = new Map(playbackPaths.map((path, position) => [path, position]));
+  const activePlaybackQueue = queueReturnToPlayer && playbackPaths?.length && ((homeView === 'playlist' && playbackSource?.type === 'playlist' && playbackSource.id === playlist?.id) || (homeView === 'favorites' && playbackSource?.type === 'favorites') || (homeView === 'all' && playbackSource?.type === 'all'));
+  if (activePlaybackQueue) {
+    const currentPath = tracks[currentIndex]?.path;
+    const currentPosition = playbackPaths.indexOf(currentPath);
+    const orderedPaths = currentPosition < 0 ? playbackPaths : [...playbackPaths.slice(currentPosition), ...playbackPaths.slice(0, currentPosition)];
+    const order = new Map(orderedPaths.map((path, position) => [path, position]));
     visibleTracks = [...visibleTracks].sort((a, b) => (order.get(a.path) ?? Infinity) - (order.get(b.path) ?? Infinity));
   } else if (homeView !== 'search' && sortMode === 'title') {
     visibleTracks = [...visibleTracks].sort((a, b) => (a.title || a.filename.replace(/\.[^.]+$/, '')).localeCompare(b.title || b.filename.replace(/\.[^.]+$/, ''), undefined, { numeric: true, sensitivity: 'base' }));
@@ -569,9 +586,11 @@ function renderQueue() {
     row.append(favorite);
     const playFromList = () => {
       if (suppressRowClick) { suppressRowClick = false; return; }
+      const samePlaybackQueue = queueReturnToPlayer && ((playlist && playbackSource?.type === 'playlist' && playbackSource.id === playlist.id) || (!playlist && homeView === 'favorites' && playbackSource?.type === 'favorites') || (!playlist && homeView === 'all' && playbackSource?.type === 'all'));
       playbackSource = playlist ? { type: 'playlist', id: playlist.id } : homeView === 'favorites' ? { type: 'favorites' } : { type: 'all' };
       const paths = playlist ? playlist.tracks : homeView === 'favorites' ? visibleTracks.map(item => item.path) : tracks.map(item => item.path);
-      setPlaybackPaths(paths, track.path); renderQueue(); playTrack(Number(row.dataset.index));
+      if (!samePlaybackQueue) setPlaybackPaths(paths, track.path);
+      renderQueue(); playTrack(Number(row.dataset.index));
     };
     play.addEventListener('click', () => { showPlayer(); playFromList(); });
     playButton.addEventListener('click', playFromList);
@@ -727,6 +746,7 @@ ui.settingsPlaylistToggle.addEventListener('click', () => {
 ui.homeCloseButton.addEventListener('click', () => window.player.close());
 ui.homeMinimizeButton.addEventListener('click', () => window.player.minimize());
 ui.homeButton.addEventListener('click', () => showHome());
+ui.playerBackButton.addEventListener('click', () => showHome());
 ui.homeHomeButton.addEventListener('click', () => showHome());
 ui.homeSettingsButton.addEventListener('click', () => showHome('settings'));
 ui.homeSearchButton.addEventListener('click', openSearch);
