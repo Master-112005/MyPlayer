@@ -56,11 +56,21 @@
 
       <div class="track-details">
         <div class="track-copy"><h1 id="trackTitle">Not Playing</h1><p id="trackArtist">Choose a folder to get started</p></div>
-        <button class="favorite-button" id="favoriteButton" title="Add to favorites" aria-label="Add to favorites"><svg viewBox="0 0 24 24"><path d="M20.8 8.8c0 4.2-8.8 10.2-8.8 10.2S3.2 13 3.2 8.8A4.4 4.4 0 0 1 12 7.4a4.4 4.4 0 0 1 8.8 1.4Z"/></svg></button>
+        <div class="track-actions">
+          <button class="favorite-button" id="favoriteButton" title="Add to favorites" aria-label="Add to favorites"><svg viewBox="0 0 24 24"><path d="M20.8 8.8c0 4.2-8.8 10.2-8.8 10.2S3.2 13 3.2 8.8A4.4 4.4 0 0 1 12 7.4a4.4 4.4 0 0 1 8.8 1.4Z"/></svg></button>
+          <button class="player-add-playlist-button" id="playerAddPlaylistButton" title="Add to playlist" aria-label="Add current song to playlists"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
       </div>
       <div class="progress-area"><div class="seek-control" id="seekBar" role="slider" tabindex="0" aria-label="Seek through song" aria-valuemin="0" aria-valuemax="1000" aria-valuenow="0"><div class="seek-rail"><span class="seek-fill"></span><span class="seek-thumb"></span></div></div><div class="time-row"><span id="currentTime">0:00</span><span id="duration">0:00</span></div></div>
       <div class="transport">
-        <button class="control-button secondary" id="shuffleButton" title="Shuffle" aria-label="Toggle shuffle"><svg viewBox="0 0 24 24"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg></button>
+        <div class="playback-options">
+          <button class="control-button secondary playback-options-button" id="playbackOptionsButton" title="Playback options" aria-label="Playback options" aria-expanded="false" aria-controls="playbackOptionsMenu"><svg class="options-menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><svg class="options-shuffle-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg><svg class="options-repeat-all-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2 21 6l-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4m14-1v2a3 3 0 0 1-3 3H3"/></svg><svg class="options-repeat-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2 21 6l-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4m14-1v2a3 3 0 0 1-3 3H3"/><text x="12" y="15" text-anchor="middle" font-size="8" font-family="Arial" font-weight="700" fill="currentColor" stroke="none">1</text></svg></button>
+          <div class="playback-options-menu" id="playbackOptionsMenu" role="group" aria-label="Playback options" hidden>
+            <button class="playback-option" id="shuffleOption" type="button" title="Shuffle" aria-label="Shuffle" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg></button>
+            <button class="playback-option" type="button" data-repeat-mode="all" title="Repeat all" aria-label="Repeat all" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2 21 6l-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4m14-1v2a3 3 0 0 1-3 3H3"/></svg></button>
+            <button class="playback-option" type="button" data-repeat-mode="one" title="Repeat one" aria-label="Repeat one" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2 21 6l-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4m14-1v2a3 3 0 0 1-3 3H3"/><text x="12" y="15" text-anchor="middle" font-size="8" font-family="Arial" font-weight="700" fill="currentColor" stroke="none">1</text></svg></button>
+          </div>
+        </div>
         <button class="control-button" id="previousButton" title="Previous song" aria-label="Previous song"><svg viewBox="0 0 24 24"><path d="M6 5v14M19 6 9 12l10 6V6Z"/></svg></button>
         <button class="play-button" id="playButton" aria-label="Play"><svg class="play-icon" viewBox="0 0 24 24"><path d="m8 5 12 7-12 7V5Z"/></svg><svg class="pause-icon hidden" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM15 5h4v14h-4z"/></svg></button>
         <button class="control-button" id="nextButton" title="Next song" aria-label="Next song"><svg viewBox="0 0 24 24"><path d="M18 5v14M5 6l10 6-10 6V6Z"/></svg></button>

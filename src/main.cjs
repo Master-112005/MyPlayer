@@ -381,13 +381,22 @@ ipcMain.handle('set-mini-mode', (_event, mini) => {
   if (!mainWindow || typeof mini !== 'boolean') return false;
   const width = mini ? 440 : 350;
   const height = mini ? 140 : 600;
+  const area = screen.getDisplayMatching(mainWindow.getBounds()).workArea;
+  const target = {
+    x: area.x + Math.round((area.width - width) / 2),
+    y: mini ? area.y + 18 : area.y + Math.round((area.height - height) / 2),
+    width,
+    height
+  };
   mainWindow.setAlwaysOnTop(mini);
   mainWindow.setMaximizable(!mini);
+  mainWindow.setResizable(false);
+  mainWindow.setMinimumSize(320, 128);
+  mainWindow.setMaximumSize(area.width, area.height);
+  mainWindow.setBounds(target);
   mainWindow.setResizable(!mini);
   mainWindow.setMinimumSize(mini ? 400 : 320, mini ? 128 : 550);
   mainWindow.setMaximumSize(mini ? 560 : 430, mini ? 180 : 740);
-  mainWindow.setSize(width, height);
-  positionMainWindow(mini ? 'mini' : 'normal', width, height);
   return mini;
 });
 ipcMain.on('window-close', event => {

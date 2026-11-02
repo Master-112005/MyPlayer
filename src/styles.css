@@ -305,3 +305,35 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus::-webkit-s
 .cinema-warning-actions button{min-height:36px;padding:0 14px;border:1px solid rgba(255,255,255,.17);border-radius:18px;background:rgba(255,255,255,.08);color:#fff;font:inherit;font-size:10px;cursor:pointer}
 .cinema-warning-actions .cinema-warning-enable{border-color:rgba(255,196,61,.45);background:rgba(255,196,61,.17);color:#ffe09a}
 .cinema-warning-actions button:hover{background:rgba(255,255,255,.15)}
+.player-add-playlist-button{flex:none;width:32px;height:32px;display:grid;place-items:center;padding:0;border:1px solid rgba(255,255,255,.1);border-radius:50%;background:rgba(255,255,255,.045);color:rgba(255,255,255,.76);cursor:pointer;transition:background .18s,border-color .18s,box-shadow .18s,transform .18s}
+.player-add-playlist-button:hover{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.34);box-shadow:0 0 12px rgba(255,255,255,.14);transform:scale(1.06)}
+.player-add-playlist-button:active{transform:scale(.94)}
+.player-add-playlist-button svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.mini-mode .player-add-playlist-button{display:none}
+.playlist-dialog .playlist-choice.already-added{opacity:1;border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.14);box-shadow:0 0 13px rgba(255,255,255,.18),inset 0 0 0 1px rgba(255,255,255,.08);color:#fff}
+.playlist-dialog .playlist-choice.already-added small{color:rgba(255,255,255,.88)}
+.playlist-dialog .playlist-choices{overflow-y:auto;scrollbar-width:none;-ms-overflow-style:none;overscroll-behavior:contain}
+.playlist-dialog .playlist-choices::-webkit-scrollbar{display:none;width:0;height:0}
+.playlist-dialog,.cinema-volume-warning{overflow:hidden;background-clip:padding-box}
+dialog::backdrop{border-radius:27px;clip-path:inset(0 round 27px);-webkit-clip-path:inset(0 round 27px)}
+.window-shell .player-content{transition:opacity .44s cubic-bezier(.16,1,.3,1),transform .54s cubic-bezier(.16,1,.3,1)}
+.topbar{transition:opacity .38s cubic-bezier(.16,1,.3,1),transform .46s cubic-bezier(.16,1,.3,1)}
+.queue-panel{transition:opacity .4s cubic-bezier(.16,1,.3,1),transform .5s cubic-bezier(.16,1,.3,1)}
+.window-shell{transition:border-radius .32s cubic-bezier(.16,1,.3,1),background .32s ease,box-shadow .3s ease}
+.window-shell.mode-switching,.window-shell.mode-switching *{transition:none!important}
+@media(prefers-reduced-motion:reduce){.window-shell .player-content,.topbar,.queue-panel,.window-shell{transition:none!important}}
+.playback-options{position:relative;flex:none;display:grid;place-items:center}
+.playback-options-menu{position:absolute;z-index:30;left:0;bottom:calc(100% + 10px);width:max-content;display:flex;align-items:center;gap:4px;padding:6px;border:1px solid rgba(255,255,255,.22);border-radius:22px;background:linear-gradient(145deg,rgba(66,66,66,.88),rgba(24,24,24,.94));box-shadow:0 12px 34px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.22);backdrop-filter:blur(28px) saturate(155%);-webkit-backdrop-filter:blur(28px) saturate(155%);transform-origin:bottom left}
+.playback-options-menu:not([hidden]){animation:playback-options-in .2s cubic-bezier(.2,.8,.2,1) both}
+@keyframes playback-options-in{from{opacity:0;transform:translateY(5px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+.playback-options-menu[hidden]{display:none}
+.playback-option{width:34px;height:34px;flex:none;display:grid;place-items:center;padding:0;border:1px solid transparent;border-radius:50%;background:transparent;color:rgba(255,255,255,.78);font:inherit;cursor:pointer;transition:background .16s,border-color .16s,box-shadow .16s,color .16s,transform .16s}
+.playback-option:hover,.playback-option:focus-visible{outline:none;border-color:rgba(255,255,255,.2);background:rgba(255,255,255,.1);color:#fff;transform:scale(1.04)}
+.playback-option.selected{border-color:rgba(255,255,255,.48);background:rgba(255,255,255,.2);box-shadow:0 0 12px rgba(255,255,255,.2),inset 0 1px 0 rgba(255,255,255,.2);color:#fff}
+.playback-option svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}
+.playback-option svg text{fill:currentColor;stroke:none}
+.playback-options-divider{width:1px;height:21px;margin:0 1px;background:rgba(255,255,255,.2)}
+.mini-mode .playback-options-menu{display:none}
+@media(prefers-reduced-motion:reduce){.playback-options-menu:not([hidden]){animation:none}.playback-option{transition:none}}
+.track-details{justify-content:flex-start}.track-copy{flex:1;min-width:0}.track-actions{display:flex;align-items:center;gap:8px;flex:none;margin-left:auto}.mini-mode .track-actions{display:none}
+.playback-options-button{position:relative;flex:none;transition:background .18s,border-color .18s,transform .18s}.playback-options-button svg{position:absolute;inset:0;margin:auto}.playback-options-button .options-shuffle-icon,.playback-options-button .options-repeat-all-icon,.playback-options-button .options-repeat-icon{display:none}.playback-options-button.is-shuffle .options-menu-icon,.playback-options-button.is-repeat-all .options-menu-icon,.playback-options-button.is-repeat-one .options-menu-icon{display:none}.playback-options-button.is-shuffle .options-shuffle-icon,.playback-options-button.is-repeat-all .options-repeat-all-icon,.playback-options-button.is-repeat-one .options-repeat-icon{display:block}

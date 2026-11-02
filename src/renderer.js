@@ -3,8 +3,8 @@ const $ = id => document.getElementById(id);
 const ui = {
   searchButton: $('searchButton'), searchInput: $('searchInput'), modeToggle: $('modeToggle'), minimizeButton: $('minimizeButton'), closeButton: $('closeButton'), playerBackButton: $('playerBackButton'),
   playButton: $('playButton'), previousButton: $('previousButton'), nextButton: $('nextButton'),
-  shuffleButton: $('shuffleButton'), queueButton: $('queueButton'), homeButton: $('homeButton'),
-  favoriteButton: $('favoriteButton'), seekBar: $('seekBar'), volumeBar: $('volumeBar'), volumeMuteButton: $('volumeMuteButton'),
+  playbackOptions: document.querySelector('.playback-options'), playbackOptionsButton: $('playbackOptionsButton'), playbackOptionsMenu: $('playbackOptionsMenu'), shuffleOption: $('shuffleOption'), repeatOptions: [...document.querySelectorAll('[data-repeat-mode]')], queueButton: $('queueButton'), homeButton: $('homeButton'),
+  favoriteButton: $('favoriteButton'), playerAddPlaylistButton: $('playerAddPlaylistButton'), seekBar: $('seekBar'), volumeBar: $('volumeBar'), volumeMuteButton: $('volumeMuteButton'),
   volumeValue: $('volumeValue'), currentTime: $('currentTime'), duration: $('duration'),
   trackTitle: $('trackTitle'), trackArtist: $('trackArtist'), trackCount: $('trackCount'), libraryLabel: $('libraryLabel'),
   artwork: $('artwork'), artworkWrap: $('artworkWrap'), visualizer: $('visualizer'), queuePanel: $('queuePanel'), queueList: $('queueList'),
@@ -19,6 +19,13 @@ let folder = localStorage.getItem('musicFolder') || '';
 let currentIndex = -1;
 let sortMode = ['title', 'date-added'].includes(localStorage.getItem('musicSortMode')) ? localStorage.getItem('musicSortMode') : 'manual';
 let shuffle = localStorage.getItem('shuffle') === 'true';
+let repeatMode = ['all', 'one'].includes(localStorage.getItem('repeatMode')) ? localStorage.getItem('repeatMode') : 'off';
+// Older saved state could enable Shuffle and Repeat at the same time. Keep
+// Shuffle when restoring that state, and make the three modes exclusive.
+if (shuffle && repeatMode !== 'off') {
+  repeatMode = 'off';
+  localStorage.setItem('repeatMode', repeatMode);
+}
 let favorites = new Set(JSON.parse(localStorage.getItem('favorites') || '[]'));
 let colorfulNotes = localStorage.getItem('colorfulNotes') === 'true';
 let coloredMiniEdges = localStorage.getItem('coloredMiniEdges') !== 'false';
@@ -26,6 +33,7 @@ let artworkEdgeRgb = '255,255,255';
 let toastTimer;
 let trackRequest = 0;
 let miniMode = false;
+let miniResizePending = false;
 let homeView = 'home';
 let selectedPlaylistId = null;
 let playerReturnView = 'home';
@@ -64,8 +72,7 @@ let previousBass = 0;
 let previousVisualizerTime = 0;
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let artworkColorRequest = 0;
-ui.shuffleButton.classList.toggle('active', shuffle);
-ui.shuffleButton.setAttribute('aria-pressed', String(shuffle));
+updatePlaybackOptions();
 ui.sortBy.value = sortMode;
 syncSortPicker();
 audio.volume = 0.75;
@@ -81,6 +88,34 @@ function closeSortPicker(returnFocus = false) {
   ui.sortPickerOptions.hidden = true;
   ui.sortPickerButton.setAttribute('aria-expanded', 'false');
   if (returnFocus) ui.sortPickerButton.focus();
+}
+
+function updatePlaybackOptions() {
+  const open = !ui.playbackOptionsMenu.hidden;
+  ui.playbackOptionsButton.setAttribute('aria-expanded', String(open));
+  ui.playbackOptionsButton.classList.toggle('active', shuffle || repeatMode !== 'off');
+  const activeMode = shuffle ? 'Shuffle' : repeatMode === 'all' ? 'Repeat All' : repeatMode === 'one' ? 'Repeat One' : '';
+  ui.playbackOptionsButton.classList.toggle('is-shuffle', shuffle);
+  ui.playbackOptionsButton.classList.toggle('is-repeat-all', repeatMode === 'all');
+  ui.playbackOptionsButton.classList.toggle('is-repeat-one', repeatMode === 'one');
+  ui.playbackOptionsButton.title = activeMode || 'Playback options';
+  ui.playbackOptionsButton.setAttribute('aria-label', activeMode ? `${activeMode} active. Open playback options` : 'Playback options');
+  ui.shuffleOption.classList.toggle('selected', shuffle);
+  ui.shuffleOption.setAttribute('aria-pressed', String(shuffle));
+  ui.shuffleOption.title = shuffle ? 'Shuffle on' : 'Shuffle off';
+  ui.shuffleOption.setAttribute('aria-label', ui.shuffleOption.title);
+  ui.repeatOptions.forEach(option => {
+    const selected = option.dataset.repeatMode === repeatMode;
+    option.classList.toggle('selected', selected);
+    option.setAttribute('aria-pressed', String(selected));
+    option.title = option.dataset.repeatMode === 'all' ? 'Repeat all' : 'Repeat one';
+    option.setAttribute('aria-label', option.title);
+  });
+}
+
+function closePlaybackOptions() {
+  ui.playbackOptionsMenu.hidden = true;
+  updatePlaybackOptions();
 }
 
 function formatTime(seconds) {
@@ -366,7 +401,7 @@ function addTrackToPlaylist(path) {
   ui.playlistChoices.replaceChildren(...playlists.map(playlist => {
     const option = document.createElement('button'); option.type = 'button'; option.className = 'playlist-choice'; option.setAttribute('aria-pressed', 'false');
     const name = document.createElement('span'); name.textContent = playlist.name; option.append(name);
-    if (playlist.tracks.includes(path)) { option.disabled = true; const status = document.createElement('small'); status.textContent = 'Added'; option.append(status); }
+    if (playlist.tracks.includes(path)) { option.disabled = true; option.classList.add('already-added'); option.setAttribute('aria-label', `${playlist.name}, already contains this song`); const status = document.createElement('small'); status.textContent = 'Added'; option.append(status); }
     option.addEventListener('click', () => {
       const selected = selectedPlaylistIds.has(playlist.id);
       if (selected) selectedPlaylistIds.delete(playlist.id); else selectedPlaylistIds.add(playlist.id);
@@ -739,6 +774,24 @@ function moveTrack(direction) {
   if (current < 0) return playTrack(0);
   return playTrack(tracks.findIndex(track => track.path === sequence[(current + direction + sequence.length) % sequence.length]));
 }
+
+function restartCurrentTrack() {
+  if (currentIndex >= 0) return playTrack(currentIndex);
+  return playTrack(0);
+}
+
+function handleTrackEnded() {
+  const sequence = (playbackPaths || sourceTrackPaths()).filter(filePath => tracks.some(track => track.path === filePath));
+  const current = sequence.indexOf(tracks[currentIndex]?.path);
+  if (repeatMode === 'one') {
+    if (currentIndex >= 0) void playTrack(currentIndex);
+    return;
+  }
+  if (current >= 0 && current < sequence.length - 1) { moveTrack(1); return; }
+  if (repeatMode === 'all' && sequence.length) { moveTrack(1); return; }
+  setPlaying(false);
+  audio.currentTime = 0;
+}
 ui.settingsFolderButton.addEventListener('click', selectFolder);
 ui.settingsRescanButton.addEventListener('click', rescan);
 ui.defaultAudioButton.addEventListener('click', async () => {
@@ -794,14 +847,42 @@ ui.addPlaylistForm.addEventListener('submit', event => {
 ui.nowPlayingBar.addEventListener('click', showPlayer);
 ui.nowPlayingPlay.addEventListener('click', event => { event.stopPropagation(); ui.playButton.click(); });
 async function resizePlayer(mini) {
+  if (miniResizePending) return;
+  miniResizePending = true;
+  const shell = document.querySelector('.window-shell');
+  const requestedMode = Boolean(mini);
+  const previousMode = miniMode;
+  let fadeOut;
+  let fadeIn;
+  const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 260;
+  const easing = 'cubic-bezier(0.42, 0, 0.58, 1)';
   try {
-    miniMode = await window.player.setMiniMode(mini);
-    document.querySelector('.window-shell').classList.toggle('mini-mode', miniMode);
+    if (mini) closePlaybackOptions();
+    shell.classList.add('mode-switching');
+    fadeOut = shell.animate([{ opacity: 1 }, { opacity: 0 }], { duration, easing, fill: 'forwards' });
+    await fadeOut.finished;
+    shell.style.opacity = '0';
+    fadeOut.cancel();
+    shell.classList.toggle('mini-mode', requestedMode);
+    miniMode = await window.player.setMiniMode(requestedMode);
+    shell.classList.toggle('mini-mode', miniMode);
     if (!audio.paused && analyser) drawVisualizer();
     ui.modeToggle.title = miniMode ? 'Expand player' : 'Switch to mini player';
     ui.modeToggle.setAttribute('aria-label', ui.modeToggle.title);
     showPlayer();
-  } catch { showToast('Could not resize the player'); }
+    fadeIn = shell.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing, fill: 'forwards' });
+    await fadeIn.finished;
+  } catch {
+    miniMode = previousMode;
+    shell.classList.toggle('mini-mode', previousMode);
+    showToast('Could not resize the player');
+  } finally {
+    shell.style.opacity = '';
+    fadeOut?.cancel();
+    fadeIn?.cancel();
+    shell.classList.remove('mode-switching');
+    miniResizePending = false;
+  }
 }
 ui.modeToggle.addEventListener('click', () => resizePlayer(!miniMode));
 ui.artworkWrap.addEventListener('click', () => { if (miniMode) resizePlayer(false); });
@@ -831,23 +912,62 @@ window.addEventListener('keydown', event => {
     event.preventDefault(); ui.nextButton.click();
   } else if (event.code === 'KeyM') {
     event.preventDefault(); setMuted(!audio.muted);
+  } else if (event.code === 'KeyF') {
+    event.preventDefault();
+    if (document.querySelector('.window-shell')?.classList.contains('player-open')) returnToPlayerEntry();
+    else showPlayer();
+  } else if (event.code === 'KeyI') {
+    event.preventDefault();
+    if (document.querySelector('.window-shell')?.classList.contains('player-open')) void resizePlayer(!miniMode);
   }
 });
 ui.previousButton.addEventListener('click', event => {
   if (event.detail > 0) event.currentTarget.blur();
+  if (repeatMode === 'one') { void restartCurrentTrack(); return; }
   if (audio.currentTime > 3 && currentIndex >= 0) { audio.currentTime = 0; return; }
   moveTrack(-1);
 });
 ui.nextButton.addEventListener('click', event => {
   if (event.detail > 0) event.currentTarget.blur();
+  if (repeatMode === 'one') { void restartCurrentTrack(); return; }
   moveTrack(1);
 });
-ui.shuffleButton.addEventListener('click', () => {
-  shuffle = !shuffle; localStorage.setItem('shuffle', String(shuffle)); ui.shuffleButton.classList.toggle('active', shuffle);
-  ui.shuffleButton.setAttribute('aria-pressed', String(shuffle));
-  if (playbackSource) setPlaybackPaths(sourceTrackPaths());
+ui.playbackOptionsButton.addEventListener('click', () => {
+  ui.playbackOptionsMenu.hidden = !ui.playbackOptionsMenu.hidden;
+  updatePlaybackOptions();
+});
+ui.shuffleOption.addEventListener('click', () => {
+  shuffle = !shuffle;
+  if (shuffle) repeatMode = 'off';
+  localStorage.setItem('shuffle', String(shuffle));
+  localStorage.setItem('repeatMode', repeatMode);
+  if (playbackSource) setPlaybackPaths(sourceTrackPaths(), tracks[currentIndex]?.path);
   renderQueue();
   showToast(shuffle ? 'Shuffle is on' : 'Shuffle is off');
+  updatePlaybackOptions();
+});
+ui.repeatOptions.forEach(option => option.addEventListener('click', () => {
+  const nextRepeatMode = option.dataset.repeatMode;
+  const restartEndedTrack = nextRepeatMode === 'one' && repeatMode !== 'one' && audio.ended;
+  const wasShuffle = shuffle;
+  repeatMode = repeatMode === nextRepeatMode ? 'off' : nextRepeatMode;
+  shuffle = false;
+  localStorage.setItem('shuffle', 'false');
+  localStorage.setItem('repeatMode', repeatMode);
+  if (wasShuffle && playbackSource) setPlaybackPaths(sourceTrackPaths(), tracks[currentIndex]?.path);
+  if (wasShuffle) renderQueue();
+  updatePlaybackOptions();
+  if (restartEndedTrack && currentIndex >= 0) void playTrack(currentIndex);
+  showToast(repeatMode === 'all' ? 'Repeat all is on' : repeatMode === 'one' ? 'Repeat one is on' : 'Repeat is off');
+}));
+document.addEventListener('pointerdown', event => {
+  if (!ui.playbackOptions.contains(event.target)) closePlaybackOptions();
+});
+ui.playbackOptions.addEventListener('keydown', event => {
+  if (event.key !== 'Escape' || ui.playbackOptionsMenu.hidden) return;
+  event.preventDefault();
+  closePlaybackOptions();
+  ui.playbackOptionsButton.focus();
 });
 ui.searchButton.addEventListener('click', openSearch);
 ui.searchInput.addEventListener('input', () => {
@@ -899,6 +1019,11 @@ ui.favoriteButton.addEventListener('click', () => {
   if (!file) return showToast('Play a song to save it as a favorite');
   if (favorites.has(file)) favorites.delete(file); else favorites.add(file);
   localStorage.setItem('favorites', JSON.stringify([...favorites])); updatePlaybackHeader(); updateFavorite(); renderPlaylists(); renderQueue();
+});
+ui.playerAddPlaylistButton.addEventListener('click', () => {
+  const path = tracks[currentIndex]?.path;
+  if (!path) return showToast('Play a song before adding it to a playlist');
+  addTrackToPlaylist(path);
 });
 let seekPointerActive = false;
 function seekFromPointer(event) {
@@ -952,7 +1077,7 @@ audio.addEventListener('timeupdate', () => {
   ui.currentTime.textContent = formatTime(audio.currentTime); ui.duration.textContent = formatTime(audio.duration);
 });
 audio.addEventListener('loadedmetadata', () => { if (Number.isFinite(audio.duration)) ui.duration.textContent = formatTime(audio.duration); });
-audio.addEventListener('ended', () => { if ((playbackPaths?.length || tracks.length) > 1) moveTrack(1); else { setPlaying(false); audio.currentTime = 0; } });
+audio.addEventListener('ended', handleTrackEnded);
 audio.addEventListener('error', () => { if (audio.src) { setPlaying(false); showToast('This audio format could not be played by Windows'); } });
 const startupAudioPath = new URLSearchParams(location.search).get('filePath');
 if (startupAudioPath) {
