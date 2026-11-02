@@ -894,6 +894,12 @@ ui.playButton.addEventListener('click', async () => {
   if (audio.paused) { try { await audio.play(); } catch { showToast('This audio format could not be played by Windows'); } }
   else audio.pause();
 });
+function togglePlayerWithF() {
+  if (miniMode || miniResizePending) return;
+  const shell = document.querySelector('.window-shell');
+  if (shell.classList.contains('player-open')) returnToPlayerEntry();
+  else showPlayer();
+}
 window.addEventListener('keydown', event => {
   if (document.documentElement.dataset.appMode !== 'music' || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || document.querySelector('dialog[open]')) return;
   const target = event.target;
@@ -914,8 +920,7 @@ window.addEventListener('keydown', event => {
     event.preventDefault(); setMuted(!audio.muted);
   } else if (event.code === 'KeyF') {
     event.preventDefault();
-    if (document.querySelector('.window-shell')?.classList.contains('player-open')) returnToPlayerEntry();
-    else showPlayer();
+    void togglePlayerWithF();
   } else if (event.code === 'KeyI') {
     event.preventDefault();
     if (document.querySelector('.window-shell')?.classList.contains('player-open')) void resizePlayer(!miniMode);
