@@ -15,9 +15,9 @@
       <button class="glass track-button" id="audioTrack" title="Choose audio track" aria-label="Choose audio track"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4ZM16 9a5 5 0 0 1 0 6M18 6a9 9 0 0 1 0 12"/></svg><span>Audio</span></button>
       <button class="glass track-button" id="subtitleTrack" title="Choose subtitle track" aria-label="Choose subtitle track"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 10h4m2 0h4M7 14h3m3 0h4"/></svg><span>Subtitles</span></button>
     </nav>
-    <div class="top-actions auto-hide">
-      <div class="top-volume" title="Volume"><button class="volume-mute" id="muteVolume" type="button" aria-label="Mute" title="Mute"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12 0a5 5 0 0 1 0 6"/></svg></button><input id="volume" type="range" min="0" max="200" value="75" aria-label="Volume"><output id="volumeValue" for="volume">75%</output></div>
-      <button class="glass close" id="close" aria-label="Close video" title="Close"><svg viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
+      <div class="top-actions">
+      <div class="top-volume auto-hide" id="volumePanel" title="Volume"><button class="volume-mute" id="muteVolume" type="button" aria-label="Mute" title="Mute"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12 0a5 5 0 0 1 0 6"/></svg></button><input id="volume" type="range" min="0" max="100" value="75" aria-label="Volume"><output id="volumeValue" for="volume">75%</output></div>
+      <button class="glass close auto-hide" id="close" aria-label="Close video" title="Close"><svg viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
     </div>
     <div class="track-menu auto-hide hidden" id="trackMenu" role="menu" aria-label="Track choices"></div>
     <button class="glass resume-prompt hidden" id="resumePrompt" type="button" aria-label="Continue playback"></button>

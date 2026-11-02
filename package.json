@@ -1,6 +1,6 @@
 {
   "name": "myplayer",
-  "version": "1.0.15",
+  "version": "1.1.15",
   "description": "A black and white Liquid Glass desktop music and video player",
   "main": "src/main.cjs",
   "author": "MyPlayer",
@@ -8,9 +8,11 @@
   "scripts": {
     "start": "electron . --player=music",
     "start:music": "electron . --player=music",
+    "prestart:cinema": "node scripts/ensure-mpv.cjs",
     "start:cinema": "electron . --player=cinema",
     "postinstall": "node scripts/patch-mpv-tracks.cjs",
     "build:mpv": "npm run build:native --prefix node_modules/electron-mpv-video",
+    "predist": "npm run build:mpv",
     "dist": "electron-builder --win nsis"
   },
   "dependencies": {
@@ -65,5 +67,8 @@
   },
   "allowScripts": {
     "electron@45.1.0": true
+  },
+  "overrides": {
+    "node-gyp": "^12.2.0"
   }
 }

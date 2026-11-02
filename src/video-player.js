@@ -8,6 +8,7 @@ const params = new URLSearchParams(location.search);
 const controls = [...document.querySelectorAll('.auto-hide')];
 let hideTimer;
 let leaveTimer;
+let keyboardIndicatorTimer;
 let progressTimer;
 let progressPending = false;
 let volumeFrame = 0;
@@ -18,6 +19,8 @@ let playbackDuration = 0;
 let lastAspect = 0;
 let fullscreen = false;
 let volumeLevel = Number($('volume').value) || 75;
+let volumeLimit = 100;
+let volumeSettingsReady;
 let previousVolumeLevel = volumeLevel;
 let muted = false;
 let currentFilePath = null;
@@ -34,6 +37,7 @@ function timeText(seconds) {
 }
 function showControls() {
   clearTimeout(leaveTimer);
+  clearTimeout(keyboardIndicatorTimer);
   controls.forEach(control => control.classList.remove('faded'));
   clearTimeout(hideTimer);
   hideTimer = setTimeout(hideControls, 5000);
@@ -41,6 +45,13 @@ function showControls() {
 function hideControls() {
   controls.forEach(control => control.classList.add('faded'));
   $('trackMenu').classList.add('hidden');
+}
+function showKeyboardIndicator(id) {
+  clearTimeout(hideTimer);
+  clearTimeout(keyboardIndicatorTimer);
+  hideControls();
+  $(id).classList.remove('faded');
+  keyboardIndicatorTimer = setTimeout(() => $(id).classList.add('faded'), 1800);
 }
 function reportError(message) {
   $('error').textContent = message;
@@ -84,6 +95,7 @@ async function updateProgress() {
   }
 }
 async function openVideo(filePath, title) {
+  await volumeSettingsReady;
   if (currentFilePath) await saveCurrentPosition();
   clearTimeout(resumeTimer);
   pendingResume = null;
@@ -97,9 +109,9 @@ async function openVideo(filePath, title) {
   $('remainingTime').textContent = '-0:00';
   playbackDuration = 0;
   lastAspect = 0;
+  video.resetVideoDimensions();
   if (progressTimer) clearInterval(progressTimer);
   try {
-    await video.setPanScan(fullscreen ? 0 : 1);
     await video.open(filePath);
     const saved = await window.player.getVideoResume(filePath);
     const { duration } = await video.getPlaybackInfo();
@@ -145,7 +157,6 @@ async function continueFromSavedPosition() {
 }
 function seekBy(seconds) {
   video.seekRelative(seconds).catch(error => reportError(`Seek failed: ${error.message || error}`));
-  showControls();
 }
 function setPlaying(playing) {
   $('player').classList.toggle('playing', playing);
@@ -159,7 +170,6 @@ async function togglePlay() {
     else await video.pause();
     updateProgress();
   } catch (error) { reportError(`Playback control failed: ${error.message || error}`); }
-  showControls();
 }
 function trackName(track, type) {
   const title = track.title?.trim();
@@ -215,13 +225,12 @@ async function cycleTrack(type) {
     const next = options[(current + 1) % options.length];
     await video.selectTrack(type, String(next.id));
     $('trackMenu').classList.add('hidden');
-    showControls();
   } catch (error) {
     reportError(`Could not change ${type === 'audio' ? 'audio' : 'subtitle'} track: ${error.message || error}`);
   }
 }
 function setVolume(level) {
-  volumeLevel = Math.max(0, Math.min(200, level));
+  volumeLevel = Math.max(0, Math.min(volumeLimit, level));
   $('volume').value = String(volumeLevel);
   $('volumeValue').textContent = `${volumeLevel}%`;
   if (volumeLevel > 0) { previousVolumeLevel = volumeLevel; muted = false; }
@@ -233,7 +242,6 @@ function setVolume(level) {
     ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="m16 9 5 6m0-6-5 6"/></svg>'
     : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12 0a5 5 0 0 1 0 6"/></svg>';
   applyVolume();
-  showControls();
 }
 async function setFullscreen(requested) {
   try {
@@ -244,7 +252,6 @@ async function setFullscreen(requested) {
 }
 function updateFullscreenUi(active) {
   fullscreen = active;
-  void video.setPanScan(active ? 0 : 1).catch(error => reportError(`Video fit update failed: ${error.message || error}`));
   document.documentElement.classList.toggle('fullscreen-mode', active);
   $('fullscreen').setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen');
   $('fullscreen').title = active ? 'Exit fullscreen' : 'Fullscreen';
@@ -255,6 +262,15 @@ function updateFullscreenUi(active) {
 window.player.onVideoFullscreenChanged(active => {
   updateFullscreenUi(active);
 });
+function setVolumeLimit(boostEnabled) {
+  volumeLimit = boostEnabled ? 200 : 100;
+  $('volume').max = String(volumeLimit);
+  if (volumeLevel > volumeLimit) setVolume(volumeLimit);
+}
+volumeSettingsReady = window.player.getCinemaVolumeBoost()
+  .then(setVolumeLimit)
+  .catch(() => setVolumeLimit(false));
+window.player.onCinemaVolumeBoostChanged(setVolumeLimit);
 
 video.addEventListener('mpv-state', event => {
   setPlaying(event.detail.status === 'Playing');
@@ -310,7 +326,6 @@ document.addEventListener('mousemove', () => {
   requestAnimationFrame(() => { moving = false; });
   showControls();
 });
-document.addEventListener('mouseenter', showControls);
 document.addEventListener('mouseleave', () => {
   clearTimeout(hideTimer);
   leaveTimer = setTimeout(hideControls, 250);
@@ -323,25 +338,29 @@ document.addEventListener('keydown', event => {
   if ((target && target.closest('input,textarea,select,[contenteditable="true"]')) || event.metaKey || event.shiftKey || event.ctrlKey && event.altKey) return;
   const key = event.key.toLowerCase();
   let handled = true;
-  if (event.altKey && event.code === 'ArrowLeft') seekBy(-60);
-  else if (event.altKey && event.code === 'ArrowRight') seekBy(60);
-  else if (event.ctrlKey && event.code === 'ArrowLeft') seekBy(-30);
-  else if (event.ctrlKey && event.code === 'ArrowRight') seekBy(30);
+  let indicator = null;
+  if (event.altKey && event.code === 'ArrowLeft') { seekBy(-60); indicator = 'bottomControls'; }
+  else if (event.altKey && event.code === 'ArrowRight') { seekBy(60); indicator = 'bottomControls'; }
+  else if (event.ctrlKey && event.code === 'ArrowLeft') { seekBy(-30); indicator = 'bottomControls'; }
+  else if (event.ctrlKey && event.code === 'ArrowRight') { seekBy(30); indicator = 'bottomControls'; }
   else if (event.code === 'Space') togglePlay();
-  else if (event.code === 'ArrowLeft') seekBy(-10);
-  else if (event.code === 'ArrowRight') seekBy(10);
-  else if (event.code === 'ArrowUp') setVolume(volumeLevel + 5);
-  else if (event.code === 'ArrowDown') setVolume(volumeLevel - 5);
-  else if (key === 'm') setVolume(muted ? (previousVolumeLevel || 75) : 0);
+  else if (event.code === 'ArrowLeft') { seekBy(-10); indicator = 'bottomControls'; }
+  else if (event.code === 'ArrowRight') { seekBy(10); indicator = 'bottomControls'; }
+  else if (event.code === 'ArrowUp') { setVolume(volumeLevel + 5); indicator = 'volumePanel'; }
+  else if (event.code === 'ArrowDown') { setVolume(volumeLevel - 5); indicator = 'volumePanel'; }
+  else if (key === 'm') { setVolume(muted ? (previousVolumeLevel || 75) : 0); indicator = 'volumePanel'; }
   else if (key === 'v') void cycleTrack('sub');
   else if (key === 'b') void cycleTrack('audio');
   else if (key === 'f') void setFullscreen(!fullscreen);
   else if (key === 'i' || event.code === 'Escape') { if (fullscreen) void setFullscreen(false); }
   else handled = false;
-  if (handled) { event.preventDefault(); showControls(); }
+  if (handled) {
+    event.preventDefault();
+    if (indicator) showKeyboardIndicator(indicator);
+  }
 });
 
 const initialPath = params.get('filePath');
 if (initialPath) openVideo(initialPath, params.get('title'));
 updateProgress();
-showControls();
+hideControls();

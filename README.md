@@ -9,11 +9,11 @@ MyCinemaPlayer uses libmpv with FFmpeg for broad video and audio codec support, 
 1. Install Node.js 22 or newer and Visual Studio Build Tools with the C++ workload.
 2. Install dependencies with `npm install`.
 3. Install the Windows x64 libmpv development files from the [MPV Windows builds](https://mpv.io/installation/) page under `%USERPROFILE%\libmpv`, with headers in `include\mpv`, the DLL in `bin`, and an MSVC import library at `lib\mpv.lib`.
-4. From an x64 Visual Studio developer command prompt, create the import library with `powershell -ExecutionPolicy Bypass -File .\node_modules\electron-mpv-video\scripts\create-libmpv-import-lib.ps1`, then run `npm run build:mpv`.
+4. From an x64 Visual Studio developer command prompt, create the import library with `powershell -ExecutionPolicy Bypass -File .\node_modules\electron-mpv-video\scripts\create-libmpv-import-lib.ps1`, then run `npm run build:mpv`. If the addon is missing, `npm run start:cinema` builds it automatically before launching.
 5. Run `npm start` for MyMusic or `npm run start:cinema` for MyCinema.
 
 ## Build the Windows installer
 
-With the native MPV addon built, run `npm run dist`. The single installer is written to `dist/MyPlayer-Setup-1.0.0.exe` and installs both apps.
+Run `npm run dist`. The command builds the native MPV addon first, then writes the single installer under `dist/` for both apps.
 
 The bundled MPV/FFmpeg build has separate third-party licensing terms; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -30,6 +30,18 @@ const pendingVideos = new WeakMap();
 let videoResumeEntries;
 let videoResumeLoad;
 let videoResumeWrite = Promise.resolve();
+let cinemaVolumeBoostEnabled = false;
+let cinemaSettingsLoad;
+
+async function loadCinemaSettings() {
+  if (!cinemaSettingsLoad) cinemaSettingsLoad = (async () => {
+    try {
+      const settings = JSON.parse(await fs.readFile(path.join(app.getPath('userData'), 'mycinema-settings.json'), 'utf8'));
+      cinemaVolumeBoostEnabled = settings.allowVolumeBoost === true;
+    } catch { cinemaVolumeBoostEnabled = false; }
+  })();
+  await cinemaSettingsLoad;
+}
 
 function validVideoPath(filePath) {
   return typeof filePath === 'string' && path.isAbsolute(filePath) && videoExtensions.has(path.extname(filePath).toLowerCase());
@@ -247,6 +259,24 @@ ipcMain.handle('video-resume-get', async (event, filePath) => {
 ipcMain.handle('video-resume-save', async (event, filePath, position, duration) => {
   if (!videoWindow || event.sender !== videoWindow.webContents || !validVideoPath(filePath) || !Number.isFinite(position) || !Number.isFinite(duration) || position < 0 || duration <= 0 || duration > 604800 || position > duration) return false;
   return saveVideoResumePosition(filePath, position, duration);
+});
+ipcMain.handle('cinema-volume-boost-get', async event => {
+  if (event.sender !== mainWindow?.webContents && event.sender !== videoWindow?.webContents) return false;
+  await loadCinemaSettings();
+  return cinemaVolumeBoostEnabled;
+});
+ipcMain.handle('cinema-volume-boost-set', async (event, enabled) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents || typeof enabled !== 'boolean') return false;
+  await loadCinemaSettings();
+  try {
+    await fs.writeFile(path.join(app.getPath('userData'), 'mycinema-settings.json'), JSON.stringify({ allowVolumeBoost: enabled }), 'utf8');
+  } catch (error) {
+    console.error('Could not save MyCinema volume settings:', error);
+    return false;
+  }
+  cinemaVolumeBoostEnabled = enabled;
+  if (videoWindow && !videoWindow.isDestroyed()) videoWindow.webContents.send('cinema-volume-boost-changed', enabled);
+  return true;
 });
 ipcMain.handle('set-video-aspect', (event, width, height) => {
   if (!videoWindow || videoWindow.isDestroyed() || event.sender !== videoWindow.webContents || !Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1 || width > 10000 || height > 10000) return false;

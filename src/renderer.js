@@ -28,6 +28,10 @@ let trackRequest = 0;
 let miniMode = false;
 let homeView = 'home';
 let selectedPlaylistId = null;
+let playerReturnView = 'home';
+let playerReturnPlaylistId = null;
+let playerReturnToPlayer = false;
+let playerReturnSearch = '';
 let playbackPaths = null;
 let playbackSource = null;
 let queueReturnToPlayer = false;
@@ -329,8 +333,23 @@ function showHome(view = 'home', playlistId = null, returnToPlayer = false) {
 }
 function showPlayer() {
   const shell = document.querySelector('.window-shell');
+  if (!shell.classList.contains('player-open')) {
+    playerReturnView = homeView;
+    playerReturnPlaylistId = selectedPlaylistId;
+    playerReturnToPlayer = queueReturnToPlayer;
+    playerReturnSearch = ui.searchInput.value;
+  }
   shell.classList.remove('home-open'); shell.classList.add('player-open');
   ui.queuePanel.classList.remove('open'); ui.queuePanel.setAttribute('aria-hidden', 'true');
+}
+function returnToPlayerEntry() {
+  if (playerReturnView === 'playlist' && !playlists.some(item => item.id === playerReturnPlaylistId)) return showHome();
+  showHome(playerReturnView, playerReturnPlaylistId, playerReturnToPlayer);
+  if (playerReturnView === 'search') {
+    ui.homeSearch.classList.remove('hidden'); ui.queuePanel.classList.add('search-open');
+    ui.searchInput.value = playerReturnSearch;
+    ui.searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+  }
 }
 function savePlaylists() { localStorage.setItem('playlists', JSON.stringify(playlists)); }
 function openSearch() {
@@ -751,7 +770,7 @@ ui.settingsPlaylistToggle.addEventListener('click', () => {
 ui.homeCloseButton.addEventListener('click', () => window.player.close());
 ui.homeMinimizeButton.addEventListener('click', () => window.player.minimize());
 ui.homeButton.addEventListener('click', () => showHome());
-ui.playerBackButton.addEventListener('click', () => showHome());
+ui.playerBackButton.addEventListener('click', returnToPlayerEntry);
 ui.homeHomeButton.addEventListener('click', () => showHome());
 ui.homeSettingsButton.addEventListener('click', () => showHome('settings'));
 ui.homeSearchButton.addEventListener('click', openSearch);
@@ -799,7 +818,8 @@ window.addEventListener('keydown', event => {
   const target = event.target;
   if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input:not([type="range"]), textarea, select, [contenteditable="true"]'))) return;
   if (event.code === 'Space') {
-    if (target instanceof HTMLElement && target.closest('button')) return;
+    const focusedButton = target instanceof HTMLElement ? target.closest('button') : null;
+    if (focusedButton && ![ui.playButton, ui.previousButton, ui.nextButton].includes(focusedButton)) return;
     event.preventDefault(); ui.playButton.click();
   } else if (event.code === 'ArrowUp' || event.code === 'ArrowDown') {
     event.preventDefault();
@@ -813,11 +833,15 @@ window.addEventListener('keydown', event => {
     event.preventDefault(); setMuted(!audio.muted);
   }
 });
-ui.previousButton.addEventListener('click', () => {
+ui.previousButton.addEventListener('click', event => {
+  if (event.detail > 0) event.currentTarget.blur();
   if (audio.currentTime > 3 && currentIndex >= 0) { audio.currentTime = 0; return; }
   moveTrack(-1);
 });
-ui.nextButton.addEventListener('click', () => moveTrack(1));
+ui.nextButton.addEventListener('click', event => {
+  if (event.detail > 0) event.currentTarget.blur();
+  moveTrack(1);
+});
 ui.shuffleButton.addEventListener('click', () => {
   shuffle = !shuffle; localStorage.setItem('shuffle', String(shuffle)); ui.shuffleButton.classList.toggle('active', shuffle);
   ui.shuffleButton.setAttribute('aria-pressed', String(shuffle));

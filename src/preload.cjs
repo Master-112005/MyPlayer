@@ -15,6 +15,13 @@ contextBridge.exposeInMainWorld('player', {
   saveVideoResume: (filePath, position, duration) => ipcRenderer.invoke('video-resume-save', filePath, position, duration),
   setVideoAspect: (width, height) => ipcRenderer.invoke('set-video-aspect', width, height),
   setVideoFullscreen: fullscreen => ipcRenderer.invoke('set-video-fullscreen', fullscreen),
+  getCinemaVolumeBoost: () => ipcRenderer.invoke('cinema-volume-boost-get'),
+  setCinemaVolumeBoost: enabled => ipcRenderer.invoke('cinema-volume-boost-set', enabled),
+  onCinemaVolumeBoostChanged: callback => {
+    const listener = (_event, enabled) => callback(enabled);
+    ipcRenderer.on('cinema-volume-boost-changed', listener);
+    return () => ipcRenderer.removeListener('cinema-volume-boost-changed', listener);
+  },
   openDefaultApps: kind => ipcRenderer.invoke('open-default-apps', kind),
   onVideoFullscreenChanged: callback => {
     const listener = (_event, fullscreen) => callback(fullscreen);

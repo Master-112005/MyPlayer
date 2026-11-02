@@ -42,17 +42,30 @@ replace('native/mpv-addon/src/mpv_addon.cc',
 {
   const file = path.join(root, 'dist/renderer/mpv-video.js');
   let text = fs.readFileSync(file, 'utf8');
-  if (text.includes("case 'dwidth':") && !text.includes("case 'width':")) {
-    text = text.replace("            case 'dwidth':\n                this.state.width = typeof event.data === 'number' ? event.data : 0;\n                break;\n            case 'dheight':\n                this.state.height = typeof event.data === 'number' ? event.data : 0;\n                break;",
-      "            case 'width':\n                this.state.width = typeof event.data === 'number' ? event.data : 0;\n                break;\n            case 'height':\n                this.state.height = typeof event.data === 'number' ? event.data : 0;\n                break;\n            case 'dwidth':\n                this.state.width = typeof event.data === 'number' && event.data > 0 ? event.data : this.state.width;\n                break;\n            case 'dheight':\n                this.state.height = typeof event.data === 'number' && event.data > 0 ? event.data : this.state.height;\n                break;");
+  const videoDimensionCases = /            case '(?:width|dwidth)':\n[\s\S]*?            case 'video-codec':/;
+  if (!text.includes('displayWidth: 0,')) {
+    if (!videoDimensionCases.test(text)) throw new Error('Cannot patch electron-mpv-video: video dimension events changed upstream');
+    text = text.replace(videoDimensionCases,
+      "            case 'width':\n                this.state.width = typeof event.data === 'number' && event.data > 0 ? event.data : this.state.width;\n                break;\n            case 'height':\n                this.state.height = typeof event.data === 'number' && event.data > 0 ? event.data : this.state.height;\n                break;\n            case 'dwidth':\n                this.state.displayWidth = typeof event.data === 'number' && event.data > 0 ? event.data : this.state.displayWidth;\n                break;\n            case 'dheight':\n                this.state.displayHeight = typeof event.data === 'number' && event.data > 0 ? event.data : this.state.displayHeight;\n                break;\n            case 'video-codec':");
   }
   fs.writeFileSync(file, text);
 }
 replace('dist/renderer/mpv-video.js',
-  "            case 'width':\n                this.state.width = typeof event.data === 'number' ? event.data : 0;\n                break;\n            case 'height':\n                this.state.height = typeof event.data === 'number' ? event.data : 0;\n                break;",
-  "            case 'width':\n                this.state.width = typeof event.data === 'number' ? event.data : 0;\n                break;\n            case 'height':\n                this.state.height = typeof event.data === 'number' ? event.data : 0;\n                break;\n            case 'dwidth':\n                this.state.width = typeof event.data === 'number' && event.data > 0 ? event.data : this.state.width;\n                break;\n            case 'dheight':\n                this.state.height = typeof event.data === 'number' && event.data > 0 ? event.data : this.state.height;\n                break;",
-  "case 'dwidth'");
-
+  '        height: 0,\n        codec: \'-\',',
+  '        height: 0,\n        displayWidth: 0,\n        displayHeight: 0,\n        codec: \'-\',',
+  'displayWidth: 0,');
+{
+  const file = path.join(root, 'dist/renderer/mpv-video.js');
+  let text = fs.readFileSync(file, 'utf8');
+  if (!text.includes('resetVideoDimensions()')) {
+    const oldGetters = '    get videoWidth() {\n        return this.state.width;\n    }\n    get videoHeight() {\n        return this.state.height;\n    }';
+    const displayGetters = '    get videoWidth() {\n        return this.state.displayWidth || this.state.width;\n    }';
+    const getters = text.includes(oldGetters) ? oldGetters : text.includes(displayGetters) ? displayGetters : null;
+    if (!getters) throw new Error('Cannot patch electron-mpv-video: video dimension getters changed upstream');
+    text = text.replace(getters, `    resetVideoDimensions() {\n        this.state.width = this.state.height = this.state.displayWidth = this.state.displayHeight = 0;\n    }\n${getters}`);
+  }
+  fs.writeFileSync(file, text);
+}
 replace('native/mpv-addon/src/mpv_addon.cc',
   '      InstanceMethod("setVolume", &MpvPlayer::SetVolume),\n',
   '      InstanceMethod("setVolume", &MpvPlayer::SetVolume),\n      InstanceMethod("cycleAudioTrack", &MpvPlayer::CycleAudioTrack),\n      InstanceMethod("cycleSubtitleTrack", &MpvPlayer::CycleSubtitleTrack),\n',
@@ -123,7 +136,7 @@ replace('native/mpv-addon/src/mpv_addon.cc',
   '      InstanceMethod("selectTrack", &MpvPlayer::SelectTrack),\n      InstanceMethod("getPlaybackInfo", &MpvPlayer::GetPlaybackInfo),\n',
   'InstanceMethod("getPlaybackInfo"');
 replace('native/mpv-addon/src/mpv_addon.cc',
-  '#include <cctype>\n', '#include <cctype>\n#include <cmath>\n', '#include <cmath>');
+  '#include <cstdlib>\n', '#include <cctype>\n#include <cmath>\n#include <cstdlib>\n', '#include <cmath>');
 replace('native/mpv-addon/src/mpv_addon.cc',
   '    return env.Undefined();\n  }\n\n  Napi::Value SetVolume',
   '    return env.Undefined();\n  }\n\n  Napi::Value SeekRelative(const Napi::CallbackInfo& info) {\n    Napi::Env env = info.Env();\n    if (info.Length() < 1 || !info[0].IsNumber()) {\n      Napi::TypeError::New(env, "seekRelative(seconds) requires a number").ThrowAsJavaScriptException();\n      return env.Undefined();\n    }\n    double seconds = info[0].As<Napi::Number>().DoubleValue();\n    int ret = command({"seek", std::to_string(seconds), "relative+exact"});\n    if (ret < 0) throw_mpv_error(env, "seekRelative", ret);\n    return env.Undefined();\n  }\n\n  Napi::Value SetVolume',
@@ -137,8 +150,8 @@ replace('native/mpv-addon/src/mpv_addon.cc',
 
 replace('dist/main/mpv-service.js', "    'player:seek',\n", "    'player:seek',\n    'player:seek-relative',\n    'player:get-tracks',\n    'player:select-track',\n", "'player:seek-relative'");
 replace('dist/main/mpv-service.js',
-  '        this.currentTime = nextTime;\n    }\n    setVolume(value) {',
-  '        this.currentTime = nextTime;\n    }\n    seekRelative(seconds) {\n        this.assertAlive();\n        this.player.seekRelative(finiteNumber(seconds, \'seconds\'));\n    }\n    setVolume(value) {',
+  '    setPanScan(value) {',
+  '    seekRelative(seconds) {\n        this.assertAlive();\n        this.player.seekRelative(finiteNumber(seconds, \'seconds\'));\n    }\n    setPanScan(value) {',
   '    seekRelative(seconds)');
 replace('dist/main/mpv-service.js',
   '    cycleSubtitleTrack() {\n        this.assertAlive();\n        this.player.cycleSubtitleTrack();\n    }\n    setRenderSize(size) {',

@@ -298,6 +298,26 @@ $('cinemaSettings').addEventListener('click', () => {
   const open = cinemaSettingsPanel.classList.toggle('hidden');
   $('cinemaSettings').setAttribute('aria-expanded', String(!open));
 });
+const cinemaVolumeBoostToggle = $('cinemaVolumeBoostToggle');
+const cinemaVolumeWarning = $('cinemaVolumeWarning');
+async function saveCinemaVolumeBoost(enabled) {
+  try {
+    if (!await window.player.setCinemaVolumeBoost(enabled)) throw new Error('save failed');
+    cinemaVolumeBoostToggle.checked = enabled;
+  } catch {
+    cinemaVolumeBoostToggle.checked = !enabled;
+    setStatus('Could not save the volume setting. Try again.');
+  }
+}
+cinemaVolumeBoostToggle.addEventListener('change', () => {
+  if (cinemaVolumeBoostToggle.checked) {
+    cinemaVolumeBoostToggle.checked = false;
+    if (!cinemaVolumeWarning.open) cinemaVolumeWarning.showModal();
+  } else void saveCinemaVolumeBoost(false);
+});
+cinemaVolumeWarning.addEventListener('close', () => {
+  if (cinemaVolumeWarning.returnValue === 'enable') void saveCinemaVolumeBoost(true);
+});
 document.addEventListener('click', event => {
   if (!event.target.closest('#cinemaSettingsPanel, #cinemaSettings')) {
     cinemaSettingsPanel.classList.add('hidden');
@@ -322,6 +342,11 @@ shell.classList.toggle('cinema-mode', mode === 'cinema');
 shell.classList.remove('launcher-mode');
 cinemaView.classList.toggle('hidden', mode !== 'cinema');
 void window.player.setAppMode(mode);
+if (mode === 'cinema') {
+  window.player.getCinemaVolumeBoost().then(enabled => { cinemaVolumeBoostToggle.checked = Boolean(enabled); }).catch(() => {
+    setStatus('Could not load the volume setting. Standard 100% limit is active.');
+  });
+}
 
 if (mode === 'cinema') {
   loadVideoFolders();
