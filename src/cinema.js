@@ -341,7 +341,6 @@ splash.setAttribute('aria-label', mode === 'cinema' ? 'MyCinema' : 'MyMusic');
 shell.classList.toggle('cinema-mode', mode === 'cinema');
 shell.classList.remove('launcher-mode');
 cinemaView.classList.toggle('hidden', mode !== 'cinema');
-void window.player.setAppMode(mode);
 if (mode === 'cinema') {
   window.player.getCinemaVolumeBoost().then(enabled => { cinemaVolumeBoostToggle.checked = Boolean(enabled); }).catch(() => {
     setStatus('Could not load the volume setting. Standard 100% limit is active.');

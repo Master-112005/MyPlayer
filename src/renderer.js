@@ -1,10 +1,10 @@
 const audio = document.getElementById('audio');
 const $ = id => document.getElementById(id);
 const ui = {
-  searchButton: $('searchButton'), searchInput: $('searchInput'), modeToggle: $('modeToggle'), minimizeButton: $('minimizeButton'), closeButton: $('closeButton'), playerBackButton: $('playerBackButton'),
+  searchButton: $('searchButton'), searchInput: $('searchInput'), modeToggle: $('modeToggle'), minimizeButton: $('minimizeButton'), closeButton: $('closeButton'), miniMuteButton: $('miniMuteButton'), playerBackButton: $('playerBackButton'),
   playButton: $('playButton'), previousButton: $('previousButton'), nextButton: $('nextButton'),
   playbackOptions: document.querySelector('.playback-options'), playbackOptionsButton: $('playbackOptionsButton'), playbackOptionsMenu: $('playbackOptionsMenu'), shuffleOption: $('shuffleOption'), repeatOptions: [...document.querySelectorAll('[data-repeat-mode]')], queueButton: $('queueButton'), homeButton: $('homeButton'),
-  favoriteButton: $('favoriteButton'), playerAddPlaylistButton: $('playerAddPlaylistButton'), seekBar: $('seekBar'), volumeBar: $('volumeBar'), volumeMuteButton: $('volumeMuteButton'),
+  favoriteButton: $('favoriteButton'), miniFavoriteButton: $('miniFavoriteButton'), playerAddPlaylistButton: $('playerAddPlaylistButton'), seekBar: $('seekBar'), volumeBar: $('volumeBar'), volumeMuteButton: $('volumeMuteButton'),
   volumeValue: $('volumeValue'), currentTime: $('currentTime'), duration: $('duration'),
   trackTitle: $('trackTitle'), trackArtist: $('trackArtist'), trackCount: $('trackCount'), libraryLabel: $('libraryLabel'),
   artwork: $('artwork'), artworkWrap: $('artworkWrap'), visualizer: $('visualizer'), queuePanel: $('queuePanel'), queueList: $('queueList'),
@@ -34,6 +34,7 @@ let toastTimer;
 let trackRequest = 0;
 let miniMode = false;
 let miniResizePending = false;
+let miniModeSyncPending = true;
 let homeView = 'home';
 let selectedPlaylistId = null;
 let playerReturnView = 'home';
@@ -122,11 +123,12 @@ function formatTime(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
   return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 }
-function showToast(message) {
+function showToast(message, duration = 2600, audioStatus = false) {
   ui.toast.textContent = message;
+  ui.toast.classList.toggle('audio-status', audioStatus);
   ui.toast.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => ui.toast.classList.remove('show'), 2600);
+  toastTimer = setTimeout(() => ui.toast.classList.remove('show'), duration);
 }
 function confirmInApp(message) {
   ui.confirmationTitle.textContent = 'Remove playlist?';
@@ -173,6 +175,9 @@ function setMuted(muted) {
   ui.volumeMuteButton.classList.toggle('muted', muted);
   ui.volumeMuteButton.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
   ui.volumeMuteButton.title = muted ? 'Unmute' : 'Mute';
+  ui.miniMuteButton.classList.toggle('muted', muted);
+  ui.miniMuteButton.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
+  ui.miniMuteButton.title = muted ? 'Unmute' : 'Mute';
   localStorage.setItem('muted', String(muted));
 }
 function setMiniEdgeColor(rgb) {
@@ -675,8 +680,18 @@ function renderQueue() {
 function updateFavorite() {
   const path = tracks[currentIndex]?.path;
   const active = Boolean(path && favorites.has(path));
-  ui.favoriteButton.classList.toggle('active', active);
-  ui.favoriteButton.setAttribute('aria-pressed', String(active));
+  for (const button of [ui.favoriteButton, ui.miniFavoriteButton]) {
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+    button.setAttribute('aria-label', active ? 'Remove from favorites' : 'Add to favorites');
+    button.title = active ? 'Remove from favorites' : 'Add to favorites';
+  }
+}
+function toggleFavorite() {
+  const file = tracks[currentIndex]?.path;
+  if (!file) return showToast('Play a song to save it as a favorite');
+  if (favorites.has(file)) favorites.delete(file); else favorites.add(file);
+  localStorage.setItem('favorites', JSON.stringify([...favorites])); updatePlaybackHeader(); updateFavorite(); renderPlaylists(); renderQueue();
 }
 async function selectFolder() {
   try {
@@ -846,36 +861,61 @@ ui.addPlaylistForm.addEventListener('submit', event => {
 });
 ui.nowPlayingBar.addEventListener('click', showPlayer);
 ui.nowPlayingPlay.addEventListener('click', event => { event.stopPropagation(); ui.playButton.click(); });
+function settleModeAnimation(animation, duration) {
+  return new Promise(resolve => {
+    let settled = false;
+    let timer;
+    const finish = force => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      if (force) { try { animation.finish(); } catch {} }
+      resolve();
+    };
+    const onVisibilityChange = () => { if (document.hidden) finish(true); };
+    animation.finished.then(() => finish(false), () => finish(false));
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    if (document.hidden || duration === 0) finish(true);
+    else timer = setTimeout(() => finish(true), duration + 120);
+  });
+}
 async function resizePlayer(mini) {
-  if (miniResizePending) return;
+  if (miniResizePending || miniModeSyncPending) return;
   miniResizePending = true;
   const shell = document.querySelector('.window-shell');
   const requestedMode = Boolean(mini);
   const previousMode = miniMode;
   let fadeOut;
   let fadeIn;
+  let nativeModeApplied = false;
   const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 260;
   const easing = 'cubic-bezier(0.42, 0, 0.58, 1)';
   try {
     if (mini) closePlaybackOptions();
     shell.classList.add('mode-switching');
     fadeOut = shell.animate([{ opacity: 1 }, { opacity: 0 }], { duration, easing, fill: 'forwards' });
-    await fadeOut.finished;
+    await settleModeAnimation(fadeOut, duration);
     shell.style.opacity = '0';
     fadeOut.cancel();
     shell.classList.toggle('mini-mode', requestedMode);
-    miniMode = await window.player.setMiniMode(requestedMode);
+    const appliedMode = await window.player.setMiniMode(requestedMode);
+    if (appliedMode !== requestedMode) throw new Error('The native window did not apply the requested player mode');
+    nativeModeApplied = true;
+    miniMode = appliedMode;
     shell.classList.toggle('mini-mode', miniMode);
     if (!audio.paused && analyser) drawVisualizer();
     ui.modeToggle.title = miniMode ? 'Expand player' : 'Switch to mini player';
     ui.modeToggle.setAttribute('aria-label', ui.modeToggle.title);
     showPlayer();
     fadeIn = shell.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing, fill: 'forwards' });
-    await fadeIn.finished;
-  } catch {
-    miniMode = previousMode;
-    shell.classList.toggle('mini-mode', previousMode);
-    showToast('Could not resize the player');
+    await settleModeAnimation(fadeIn, duration);
+  } catch (error) {
+    console.error('Music player resize failed:', error);
+    miniMode = nativeModeApplied ? requestedMode : previousMode;
+    shell.classList.toggle('mini-mode', miniMode);
+    if (nativeModeApplied) showPlayer();
+    else showToast('Could not resize the player');
   } finally {
     shell.style.opacity = '';
     fadeOut?.cancel();
@@ -900,24 +940,33 @@ function togglePlayerWithF() {
   if (shell.classList.contains('player-open')) returnToPlayerEntry();
   else showPlayer();
 }
+// Mouse clicks should not leave controls as the keyboard's active target.
+// This keeps global shortcuts (especially Space) from activating the last
+// clicked button when the user switches from pointer to keyboard.
+document.addEventListener('click', event => {
+  if (event.detail <= 0) return;
+  const clickedButton = event.target instanceof Element ? event.target.closest('button') : null;
+  clickedButton?.blur();
+}, true);
 window.addEventListener('keydown', event => {
   if (document.documentElement.dataset.appMode !== 'music' || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || document.querySelector('dialog[open]')) return;
   const target = event.target;
   if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input:not([type="range"]), textarea, select, [contenteditable="true"]'))) return;
   if (event.code === 'Space') {
-    const focusedButton = target instanceof HTMLElement ? target.closest('button') : null;
-    if (focusedButton && ![ui.playButton, ui.previousButton, ui.nextButton].includes(focusedButton)) return;
     event.preventDefault(); ui.playButton.click();
   } else if (event.code === 'ArrowUp' || event.code === 'ArrowDown') {
     event.preventDefault();
     ui.volumeBar.value = String(Math.max(0, Math.min(100, Number(ui.volumeBar.value) + (event.code === 'ArrowUp' ? 2 : -2))));
     ui.volumeBar.dispatchEvent(new Event('input', { bubbles: true }));
+    showToast(`Volume ${ui.volumeBar.value}%`, 1400, true);
   } else if (event.code === 'ArrowLeft') {
     event.preventDefault(); ui.previousButton.click();
   } else if (event.code === 'ArrowRight') {
     event.preventDefault(); ui.nextButton.click();
   } else if (event.code === 'KeyM') {
-    event.preventDefault(); setMuted(!audio.muted);
+    event.preventDefault();
+    setMuted(!audio.muted);
+    showToast(audio.muted ? 'Muted' : 'Unmuted', 1400, true);
   } else if (event.code === 'KeyF') {
     event.preventDefault();
     void togglePlayerWithF();
@@ -1019,12 +1068,8 @@ ui.playlistBackButton.addEventListener('click', () => {
   if (queueReturnToPlayer) showPlayer();
   else showHome();
 });
-ui.favoriteButton.addEventListener('click', () => {
-  const file = tracks[currentIndex]?.path;
-  if (!file) return showToast('Play a song to save it as a favorite');
-  if (favorites.has(file)) favorites.delete(file); else favorites.add(file);
-  localStorage.setItem('favorites', JSON.stringify([...favorites])); updatePlaybackHeader(); updateFavorite(); renderPlaylists(); renderQueue();
-});
+ui.favoriteButton.addEventListener('click', toggleFavorite);
+ui.miniFavoriteButton.addEventListener('click', toggleFavorite);
 ui.playerAddPlaylistButton.addEventListener('click', () => {
   const path = tracks[currentIndex]?.path;
   if (!path) return showToast('Play a song before adding it to a playlist');
@@ -1066,6 +1111,10 @@ ui.volumeBar.addEventListener('input', () => {
   localStorage.setItem('volume', ui.volumeBar.value);
 });
 ui.volumeMuteButton.addEventListener('click', () => setMuted(!audio.muted));
+ui.miniMuteButton.addEventListener('click', () => {
+  setMuted(!audio.muted);
+  showToast(audio.muted ? 'Muted' : 'Unmuted', 1400, true);
+});
 setMuted(localStorage.getItem('muted') === 'true');
 const savedVolume = Number(localStorage.getItem('volume'));
 if (Number.isFinite(savedVolume) && localStorage.getItem('volume') !== null) {
@@ -1108,3 +1157,15 @@ if (startupAudioPath) {
   }).catch(() => showToast('Your saved music folder is unavailable'));
 }
 populateMusicNotes(); renderPlaylists(); showHome(); updateNowPlaying();
+void window.player.getMiniMode().then(isMini => {
+  miniMode = Boolean(isMini);
+  const shell = document.querySelector('.window-shell');
+  shell.classList.toggle('mini-mode', miniMode);
+  ui.modeToggle.title = miniMode ? 'Expand player' : 'Switch to mini player';
+  ui.modeToggle.setAttribute('aria-label', ui.modeToggle.title);
+  if (miniMode) showPlayer();
+}).catch(error => {
+  console.error('Could not restore native player mode:', error);
+}).finally(() => {
+  miniModeSyncPending = false;
+});

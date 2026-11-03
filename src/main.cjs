@@ -20,6 +20,7 @@ if (launchMode === 'cinema') {
 }
 
 let mainWindow;
+let mainWindowMiniMode = false;
 let mpvMain;
 let videoWindow;
 let videoWindowRestoreBounds;
@@ -93,6 +94,7 @@ function attachMpvWindow(window) {
 
 function createWindow(mode) {
   const cinema = mode === 'cinema';
+  mainWindowMiniMode = false;
   const iconName = cinema ? 'mycinema.ico' : 'mymusicplayer.ico';
   mainWindow = new BrowserWindow({
     width: cinema ? 700 : 350, height: 600, minWidth: cinema ? 620 : 320, minHeight: cinema ? 500 : 550,
@@ -101,6 +103,24 @@ function createWindow(mode) {
     title: cinema ? 'MyCinema' : 'MyMusic',
     icon: app.isPackaged ? path.join(process.resourcesPath, iconName) : path.join(__dirname, '..', 'assets', iconName),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: false }
+  });
+  const window = mainWindow;
+  let rendererRecoveryAttempted = false;
+  if (!cinema) {
+    window.webContents.on('render-process-gone', (_event, details) => {
+      console.error(`MyMusic renderer exited: ${details.reason} (code ${details.exitCode})`);
+      if (details.reason === 'clean-exit' || rendererRecoveryAttempted) return;
+      rendererRecoveryAttempted = true;
+      setTimeout(() => {
+        if (mainWindow === window && !window.isDestroyed() && window.webContents.isCrashed()) window.webContents.reload();
+      }, 350);
+    });
+  }
+  window.once('closed', () => {
+    if (mainWindow === window) {
+      mainWindow = null;
+      mainWindowMiniMode = false;
+    }
   });
   attachMpvWindow(mainWindow);
   mainWindow.loadFile(path.join(__dirname, 'index.html'), { query: { app: mode, ...(startupFileType === 'audio' ? { filePath: startupFilePath } : {}) } });
@@ -338,6 +358,7 @@ ipcMain.handle('set-app-mode', (_event, mode) => {
   };
   const preset = presets[mode];
   if (!mainWindow || !preset) return false;
+  mainWindowMiniMode = false;
   const area = screen.getDisplayMatching(mainWindow.getBounds()).workArea;
   const [x, y] = mainWindow.getPosition();
   mainWindow.setAlwaysOnTop(false);
@@ -377,8 +398,9 @@ ipcMain.handle('track-info', async (_event, filePath) => {
     artwork
   };
 });
-ipcMain.handle('set-mini-mode', (_event, mini) => {
-  if (!mainWindow || typeof mini !== 'boolean') return false;
+ipcMain.handle('get-mini-mode', event => Boolean(mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents && mainWindowMiniMode));
+ipcMain.handle('set-mini-mode', (event, mini) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents || typeof mini !== 'boolean') return false;
   const width = mini ? 440 : 350;
   const height = mini ? 140 : 600;
   const area = screen.getDisplayMatching(mainWindow.getBounds()).workArea;
@@ -388,15 +410,31 @@ ipcMain.handle('set-mini-mode', (_event, mini) => {
     width,
     height
   };
-  mainWindow.setAlwaysOnTop(mini);
-  mainWindow.setMaximizable(!mini);
-  mainWindow.setResizable(false);
-  mainWindow.setMinimumSize(320, 128);
-  mainWindow.setMaximumSize(area.width, area.height);
-  mainWindow.setBounds(target);
-  mainWindow.setResizable(!mini);
-  mainWindow.setMinimumSize(mini ? 400 : 320, mini ? 128 : 550);
-  mainWindow.setMaximumSize(mini ? 560 : 430, mini ? 180 : 740);
+  const matchesTargetSize = bounds => Math.abs(bounds.width - width) <= 8 && Math.abs(bounds.height - height) <= 8;
+  try {
+    mainWindow.setAlwaysOnTop(mini);
+    mainWindow.setMaximizable(!mini);
+    mainWindow.setResizable(false);
+    mainWindow.setMinimumSize(320, 128);
+    mainWindow.setMaximumSize(area.width, area.height);
+    mainWindow.setBounds(target);
+    mainWindow.setResizable(!mini);
+    mainWindow.setMinimumSize(mini ? 400 : 320, mini ? 128 : 550);
+    mainWindow.setMaximumSize(mini ? 560 : 430, mini ? 180 : 740);
+    const bounds = mainWindow.getBounds();
+    if (!matchesTargetSize(bounds)) throw new Error(`Unexpected window size ${bounds.width}x${bounds.height}; expected about ${width}x${height}`);
+    mainWindowMiniMode = mini;
+  } catch (error) {
+    const bounds = mainWindow.getBounds();
+    if (!matchesTargetSize(bounds)) {
+      console.error('Could not apply MyMusic window mode:', error);
+      throw error;
+    }
+    mainWindowMiniMode = mini;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
   return mini;
 });
 ipcMain.on('window-close', event => {

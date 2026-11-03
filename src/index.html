@@ -41,6 +41,7 @@
         
         
         <button class="icon-button window-action" id="homeButton" title="Home" aria-label="Home"><svg viewBox="0 0 24 24"><path d="m3 10 9-7 9 7M5.5 9v11h13V9M9 20v-7h6v7"/></svg></button>
+        <button class="icon-button window-action mini-mute-button" id="miniMuteButton" aria-label="Mute" title="Mute"><svg class="sound-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l5 4V6l-5 4H4ZM17 9a5 5 0 0 1 0 6M19 6a9 9 0 0 1 0 12"/></svg><svg class="sound-muted" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l5 4V6l-5 4H4ZM17 9l5 6m0-6-5 6"/></svg></button>
         <button class="icon-button window-action" id="minimizeButton" title="Minimize to taskbar" aria-label="Minimize to taskbar"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
         <button class="icon-button window-action close-action" id="closeButton" title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
       </div>
@@ -55,7 +56,7 @@
       </div>
 
       <div class="track-details">
-        <div class="track-copy"><h1 id="trackTitle">Not Playing</h1><p id="trackArtist">Choose a folder to get started</p></div>
+        <div class="track-copy"><div class="track-title-row"><h1 id="trackTitle">Not Playing</h1><button class="favorite-button mini-favorite-button" id="miniFavoriteButton" title="Add to favorites" aria-label="Add to favorites" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M20.8 8.8c0 4.2-8.8 10.2-8.8 10.2S3.2 13 3.2 8.8A4.4 4.4 0 0 1 12 7.4a4.4 4.4 0 0 1 8.8 1.4Z"/></svg></button></div><p id="trackArtist">Choose a folder to get started</p></div>
         <div class="track-actions">
           <button class="favorite-button" id="favoriteButton" title="Add to favorites" aria-label="Add to favorites"><svg viewBox="0 0 24 24"><path d="M20.8 8.8c0 4.2-8.8 10.2-8.8 10.2S3.2 13 3.2 8.8A4.4 4.4 0 0 1 12 7.4a4.4 4.4 0 0 1 8.8 1.4Z"/></svg></button>
           <button class="player-add-playlist-button" id="playerAddPlaylistButton" title="Add to playlist" aria-label="Add current song to playlists"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>

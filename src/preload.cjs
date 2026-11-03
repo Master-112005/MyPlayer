@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('player', {
     return () => ipcRenderer.removeListener('video-open', listener);
   },
   setAppMode: mode => ipcRenderer.invoke('set-app-mode', mode),
+  getMiniMode: () => ipcRenderer.invoke('get-mini-mode'),
   setMiniMode: mini => ipcRenderer.invoke('set-mini-mode', mini),
   close: () => ipcRenderer.send('window-close'),
   minimize: () => ipcRenderer.send('window-minimize')
