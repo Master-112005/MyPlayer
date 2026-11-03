@@ -17,6 +17,8 @@ const ui = {
 let tracks = [];
 let folder = localStorage.getItem('musicFolder') || '';
 let currentIndex = -1;
+let pendingResume = null;
+let lastPositionSavedAt = 0;
 let sortMode = ['title', 'date-added'].includes(localStorage.getItem('musicSortMode')) ? localStorage.getItem('musicSortMode') : 'manual';
 let shuffle = localStorage.getItem('shuffle') === 'true';
 let repeatMode = ['all', 'one'].includes(localStorage.getItem('repeatMode')) ? localStorage.getItem('repeatMode') : 'off';
@@ -731,9 +733,14 @@ async function playTrack(index, autoplay = true) {
   if (!tracks.length) { showToast('Choose a music folder first'); return; }
   if (!playbackSource) playbackSource = { type: 'all' };
   if (!playbackPaths && shuffle) setPlaybackPaths(sourceTrackPaths(), tracks[(index + tracks.length) % tracks.length]?.path);
+  savePlaybackPosition(true);
   currentIndex = (index + tracks.length) % tracks.length;
   const track = tracks[currentIndex];
   localStorage.setItem('lastPlayedTrack', track.path);
+  if (pendingResume?.path.toLocaleLowerCase() !== track.path.toLocaleLowerCase()) {
+    pendingResume = null;
+    localStorage.setItem('lastPlayedPosition', JSON.stringify({ path: track.path, time: 0 }));
+  }
   const request = ++trackRequest;
   audio.src = track.url;
   audio.load();
@@ -765,6 +772,14 @@ async function playTrack(index, autoplay = true) {
     track.title = track.filename.replace(/\.[^.]+$/, ''); track.artist = 'Unknown artist';
   }
   if (!(await playback) && request === trackRequest) { setPlaying(false); showToast('This audio format could not be played by Windows'); }
+}
+function savePlaybackPosition(force = false) {
+  const track = tracks[currentIndex];
+  if (!track || !Number.isFinite(audio.currentTime)) return;
+  const now = Date.now();
+  if (!force && now - lastPositionSavedAt < 3000) return;
+  lastPositionSavedAt = now;
+  localStorage.setItem('lastPlayedPosition', JSON.stringify({ path: track.path, time: audio.currentTime }));
 }
 async function rescan() {
   if (!folder) { await selectFolder(); return; }
@@ -963,6 +978,10 @@ window.addEventListener('keydown', event => {
     event.preventDefault(); ui.previousButton.click();
   } else if (event.code === 'ArrowRight') {
     event.preventDefault(); ui.nextButton.click();
+  } else if (event.code === 'KeyH' && !miniMode) {
+    event.preventDefault(); showHome();
+  } else if (event.code === 'KeyS' && !miniMode) {
+    event.preventDefault(); openSearch();
   } else if (event.code === 'KeyM') {
     event.preventDefault();
     setMuted(!audio.muted);
@@ -1121,18 +1140,33 @@ if (Number.isFinite(savedVolume) && localStorage.getItem('volume') !== null) {
   audio.volume = savedVolume / 100; ui.volumeBar.value = String(savedVolume); ui.volumeValue.textContent = String(savedVolume); paintRange(ui.volumeBar, savedVolume);
 } else paintRange(ui.volumeBar, 75);
 audio.addEventListener('play', () => { setPlaying(true); startVisualizer(); renderQueue(); });
-audio.addEventListener('pause', () => { setPlaying(false); stopVisualizer(); renderQueue(); });
+audio.addEventListener('pause', () => { savePlaybackPosition(true); setPlaying(false); stopVisualizer(); renderQueue(); });
 audio.addEventListener('timeupdate', () => {
-  if (!Number.isFinite(audio.duration)) return;
   if (seekPointerActive) return;
+  savePlaybackPosition();
+  if (!Number.isFinite(audio.duration)) return;
   const percent = audio.currentTime / audio.duration * 100;
   setSeekValue(percent * 10);
   ui.seekBar.setAttribute('aria-valuetext', `${formatTime(audio.currentTime)} of ${formatTime(audio.duration)}`);
   ui.currentTime.textContent = formatTime(audio.currentTime); ui.duration.textContent = formatTime(audio.duration);
 });
-audio.addEventListener('loadedmetadata', () => { if (Number.isFinite(audio.duration)) ui.duration.textContent = formatTime(audio.duration); });
+audio.addEventListener('loadedmetadata', () => {
+  if (Number.isFinite(audio.duration)) ui.duration.textContent = formatTime(audio.duration);
+  if (!pendingResume) return;
+  if (tracks[currentIndex]?.path.toLocaleLowerCase() !== pendingResume.path.toLocaleLowerCase()) { pendingResume = null; return; }
+  const resumeAt = Number.isFinite(audio.duration) ? Math.min(pendingResume.time, Math.max(0, audio.duration - 0.25)) : pendingResume.time;
+  pendingResume = null;
+  if (resumeAt > 0) audio.currentTime = resumeAt;
+  if (Number.isFinite(audio.duration) && audio.duration > 0) {
+    setSeekValue(audio.currentTime / audio.duration * 1000);
+    ui.currentTime.textContent = formatTime(audio.currentTime);
+    ui.seekBar.setAttribute('aria-valuetext', `${formatTime(audio.currentTime)} of ${formatTime(audio.duration)}`);
+  }
+  savePlaybackPosition(true);
+});
 audio.addEventListener('ended', handleTrackEnded);
 audio.addEventListener('error', () => { if (audio.src) { setPlaying(false); showToast('This audio format could not be played by Windows'); } });
+window.addEventListener('pagehide', () => savePlaybackPosition(true));
 const startupAudioPath = new URLSearchParams(location.search).get('filePath');
 if (startupAudioPath) {
   const separator = Math.max(startupAudioPath.lastIndexOf('\\'), startupAudioPath.lastIndexOf('/'));
@@ -1152,7 +1186,15 @@ if (startupAudioPath) {
     else {
       const lastPath = localStorage.getItem('lastPlayedTrack');
       const lastIndex = tracks.findIndex(track => track.path.toLocaleLowerCase() === lastPath?.toLocaleLowerCase());
-      if (lastIndex >= 0) { playbackSource = { type: 'all' }; playbackPaths = null; void playTrack(lastIndex, false); }
+      if (lastIndex >= 0) {
+        try {
+          const saved = JSON.parse(localStorage.getItem('lastPlayedPosition') || 'null');
+          if (typeof saved?.path === 'string' && saved.path.toLocaleLowerCase() === tracks[lastIndex].path.toLocaleLowerCase() && Number.isFinite(saved.time) && saved.time >= 0) {
+            pendingResume = { path: tracks[lastIndex].path, time: saved.time };
+          }
+        } catch {}
+        playbackSource = { type: 'all' }; playbackPaths = null; void playTrack(lastIndex, false);
+      }
     }
   }).catch(() => showToast('Your saved music folder is unavailable'));
 }

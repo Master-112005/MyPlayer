@@ -98,7 +98,7 @@ function createWindow(mode) {
   const iconName = cinema ? 'mycinema.ico' : 'mymusicplayer.ico';
   mainWindow = new BrowserWindow({
     width: cinema ? 700 : 350, height: 600, minWidth: cinema ? 620 : 320, minHeight: cinema ? 500 : 550,
-    maxWidth: cinema ? 1100 : 430, maxHeight: cinema ? 850 : 740, show: false, frame: false, roundedCorners: true,
+    maxWidth: cinema ? 1100 : 430, maxHeight: cinema ? 850 : 740, show: false, frame: false, roundedCorners: true, hasShadow: false,
     transparent: true, backgroundColor: '#00000000', resizable: true,
     title: cinema ? 'MyCinema' : 'MyMusic',
     icon: app.isPackaged ? path.join(process.resourcesPath, iconName) : path.join(__dirname, '..', 'assets', iconName),
@@ -160,7 +160,7 @@ function createVideoWindow(filePath, title) {
     width, height, minWidth: 320, minHeight: 180,
     maxWidth: area.width, maxHeight: area.height,
     x: area.x + Math.round((area.width - width) / 2), y: area.y + Math.round((area.height - height) / 2),
-    frame: false, show: false, transparent: true, backgroundColor: '#00000000', resizable: true,
+    frame: false, show: false, transparent: true, backgroundColor: '#00000000', hasShadow: false, resizable: true,
     title, icon: app.isPackaged ? path.join(process.resourcesPath, 'mycinema.ico') : path.join(__dirname, '..', 'assets', 'mycinema.ico'),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: false }
   });

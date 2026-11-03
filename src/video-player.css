@@ -2,6 +2,7 @@
 html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif}
 body{user-select:none}
 .player{position:relative;width:100%;height:100%;overflow:hidden;border-radius:22px;background:#000;isolation:isolate}
+.player,.player::after,mpv-video{-electron-corner-smoothing:60%}
 .player:after{position:absolute;z-index:1;inset:0;border:1px solid rgba(255,255,255,.2);border-radius:inherit;content:"";pointer-events:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
 mpv-video{position:absolute;inset:0;width:100%;height:100%;display:block;overflow:hidden;border-radius:inherit}
 .drag-strip{position:absolute;z-index:2;top:0;left:0;right:255px;height:17px;-webkit-app-region:drag}
