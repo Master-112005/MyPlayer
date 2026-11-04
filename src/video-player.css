@@ -104,9 +104,13 @@ html.fullscreen-mode mpv-video{border-radius:0}
 .resume-prompt:not(.hidden){opacity:1;pointer-events:auto}
 @media(max-width:560px){.resume-prompt{top:53px;right:9px;min-height:35px;font-size:11px}}
 
+
 @property --scroll-fade-top{syntax:"<length>";inherits:false;initial-value:0px}
 @property --scroll-fade-bottom{syntax:"<length>";inherits:false;initial-value:0px}
 .scroll-edge-fade{-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 var(--scroll-fade-top),#000 calc(100% - var(--scroll-fade-bottom)),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,#000 var(--scroll-fade-top),#000 calc(100% - var(--scroll-fade-bottom)),transparent 100%);--scroll-fade-top:0px;--scroll-fade-bottom:0px;transition:--scroll-fade-top 160ms ease-out,--scroll-fade-bottom 160ms ease-out}
 .scroll-edge-fade.scroll-fade-top{--scroll-fade-top:24px}
 .scroll-edge-fade.scroll-fade-bottom{--scroll-fade-bottom:24px}
 @media(prefers-reduced-motion:reduce){.scroll-edge-fade{transition:none}}
+
+.keyboard-status{position:absolute;z-index:12;left:50%;top:16px;max-width:calc(100% - 32px);padding:8px 14px;transform:translate(-50%,-6px) scale(.96);border:1px solid rgba(255,255,255,.22);border-radius:16px;background:rgba(20,20,20,.72);box-shadow:0 8px 26px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.12);backdrop-filter:blur(22px) saturate(130%);-webkit-backdrop-filter:blur(22px) saturate(130%);color:#fff;font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s,transform .15s}
+.keyboard-status.visible{transform:translate(-50%,0) scale(1);opacity:1}

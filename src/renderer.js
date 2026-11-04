@@ -3,7 +3,7 @@ const $ = id => document.getElementById(id);
 const ui = {
   searchButton: $('searchButton'), searchInput: $('searchInput'), modeToggle: $('modeToggle'), minimizeButton: $('minimizeButton'), closeButton: $('closeButton'), miniMuteButton: $('miniMuteButton'), playerBackButton: $('playerBackButton'),
   playButton: $('playButton'), previousButton: $('previousButton'), nextButton: $('nextButton'),
-  playbackOptions: document.querySelector('.playback-options'), playbackOptionsButton: $('playbackOptionsButton'), playbackOptionsMenu: $('playbackOptionsMenu'), shuffleOption: $('shuffleOption'), repeatOptions: [...document.querySelectorAll('[data-repeat-mode]')], queueButton: $('queueButton'), homeButton: $('homeButton'),
+  playbackOptions: document.querySelector('.playback-options'), playbackOptionsButton: $('playbackOptionsButton'), miniPlaybackOptionsButton: $('miniPlaybackOptionsButton'), playbackOptionsMenu: $('playbackOptionsMenu'), shuffleOption: $('shuffleOption'), repeatOptions: [...document.querySelectorAll('[data-repeat-mode]')], queueButton: $('queueButton'), homeButton: $('homeButton'),
   favoriteButton: $('favoriteButton'), miniFavoriteButton: $('miniFavoriteButton'), playerAddPlaylistButton: $('playerAddPlaylistButton'), seekBar: $('seekBar'), volumeBar: $('volumeBar'), volumeMuteButton: $('volumeMuteButton'),
   volumeValue: $('volumeValue'), currentTime: $('currentTime'), duration: $('duration'),
   trackTitle: $('trackTitle'), trackArtist: $('trackArtist'), trackCount: $('trackCount'), libraryLabel: $('libraryLabel'),
@@ -96,8 +96,16 @@ function closeSortPicker(returnFocus = false) {
 function updatePlaybackOptions() {
   const open = !ui.playbackOptionsMenu.hidden;
   ui.playbackOptionsButton.setAttribute('aria-expanded', String(open));
+  ui.miniPlaybackOptionsButton.setAttribute('aria-expanded', String(open));
   ui.playbackOptionsButton.classList.toggle('active', shuffle || repeatMode !== 'off');
+  ui.miniPlaybackOptionsButton.classList.toggle('is-shuffle', shuffle);
+  ui.miniPlaybackOptionsButton.classList.toggle('is-repeat-all', repeatMode === 'all');
+  ui.miniPlaybackOptionsButton.classList.toggle('is-repeat-one', repeatMode === 'one');
   const activeMode = shuffle ? 'Shuffle' : repeatMode === 'all' ? 'Repeat All' : repeatMode === 'one' ? 'Repeat One' : '';
+  ui.miniPlaybackOptionsButton.classList.toggle('active', Boolean(activeMode));
+  ui.miniPlaybackOptionsButton.setAttribute('aria-pressed', String(Boolean(activeMode)));
+  ui.miniPlaybackOptionsButton.title = activeMode || 'Playback options';
+  ui.miniPlaybackOptionsButton.setAttribute('aria-label', activeMode ? `${activeMode} active. Open playback options` : 'Playback options');
   ui.playbackOptionsButton.classList.toggle('is-shuffle', shuffle);
   ui.playbackOptionsButton.classList.toggle('is-repeat-all', repeatMode === 'all');
   ui.playbackOptionsButton.classList.toggle('is-repeat-one', repeatMode === 'one');
@@ -1009,6 +1017,7 @@ ui.playbackOptionsButton.addEventListener('click', () => {
   ui.playbackOptionsMenu.hidden = !ui.playbackOptionsMenu.hidden;
   updatePlaybackOptions();
 });
+ui.miniPlaybackOptionsButton.addEventListener('click', () => ui.playbackOptionsButton.click());
 ui.shuffleOption.addEventListener('click', () => {
   shuffle = !shuffle;
   if (shuffle) repeatMode = 'off';
@@ -1034,13 +1043,13 @@ ui.repeatOptions.forEach(option => option.addEventListener('click', () => {
   showToast(repeatMode === 'all' ? 'Repeat all is on' : repeatMode === 'one' ? 'Repeat one is on' : 'Repeat is off');
 }));
 document.addEventListener('pointerdown', event => {
-  if (!ui.playbackOptions.contains(event.target)) closePlaybackOptions();
+  if (!ui.playbackOptions.contains(event.target) && !ui.miniPlaybackOptionsButton.contains(event.target)) closePlaybackOptions();
 });
 ui.playbackOptions.addEventListener('keydown', event => {
   if (event.key !== 'Escape' || ui.playbackOptionsMenu.hidden) return;
   event.preventDefault();
   closePlaybackOptions();
-  ui.playbackOptionsButton.focus();
+  (miniMode ? ui.miniPlaybackOptionsButton : ui.playbackOptionsButton).focus();
 });
 ui.searchButton.addEventListener('click', openSearch);
 ui.searchInput.addEventListener('input', () => {

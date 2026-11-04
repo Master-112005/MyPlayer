@@ -8,7 +8,7 @@ const params = new URLSearchParams(location.search);
 const controls = [...document.querySelectorAll('.auto-hide')];
 let hideTimer;
 let leaveTimer;
-let keyboardIndicatorTimer;
+let keyboardStatusTimer;
 let progressTimer;
 let progressPending = false;
 let volumeFrame = 0;
@@ -37,7 +37,8 @@ function timeText(seconds) {
 }
 function showControls() {
   clearTimeout(leaveTimer);
-  clearTimeout(keyboardIndicatorTimer);
+  clearTimeout(keyboardStatusTimer);
+  $('keyboardStatus').classList.remove('visible');
   controls.forEach(control => control.classList.remove('faded'));
   clearTimeout(hideTimer);
   hideTimer = setTimeout(hideControls, 5000);
@@ -46,12 +47,12 @@ function hideControls() {
   controls.forEach(control => control.classList.add('faded'));
   $('trackMenu').classList.add('hidden');
 }
-function showKeyboardIndicator(id) {
-  clearTimeout(hideTimer);
-  clearTimeout(keyboardIndicatorTimer);
-  hideControls();
-  $(id).classList.remove('faded');
-  keyboardIndicatorTimer = setTimeout(() => $(id).classList.add('faded'), 1800);
+function showKeyboardStatus(message) {
+  const status = $('keyboardStatus');
+  status.textContent = message;
+  status.classList.add('visible');
+  clearTimeout(keyboardStatusTimer);
+  keyboardStatusTimer = setTimeout(() => status.classList.remove('visible'), 1200);
 }
 function reportError(message) {
   $('error').textContent = message;
@@ -158,6 +159,25 @@ async function continueFromSavedPosition() {
 function seekBy(seconds) {
   video.seekRelative(seconds).catch(error => reportError(`Seek failed: ${error.message || error}`));
 }
+async function seekToPercentage(percent) {
+  try {
+    const { duration } = await video.getPlaybackInfo();
+    if (duration > 0) {
+      const position = duration * percent / 100;
+      await video.seek(position);
+      showKeyboardStatus(timeText(position));
+    }
+  } catch (error) { reportError(`Seek failed: ${error.message || error}`); }
+}
+async function seekForKeyboard(seconds) {
+  try {
+    const { currentTime, duration } = await video.getPlaybackInfo();
+    if (duration <= 0) return;
+    const position = Math.max(0, Math.min(duration, currentTime + seconds));
+    await video.seek(position);
+    showKeyboardStatus(timeText(position));
+  } catch (error) { reportError(`Seek failed: ${error.message || error}`); }
+}
 function setPlaying(playing) {
   $('player').classList.toggle('playing', playing);
   $('toggle').setAttribute('aria-label', playing ? 'Pause' : 'Play');
@@ -169,11 +189,17 @@ async function togglePlay() {
     if (paused) await video.play();
     else await video.pause();
     updateProgress();
+    return paused;
   } catch (error) { reportError(`Playback control failed: ${error.message || error}`); }
 }
+function displayTrackLanguage(language) {
+  const code = language?.trim().toLowerCase();
+  const names = { eng: 'English', en: 'English', tel: 'Telugu', te: 'Telugu', hin: 'Hindi', hi: 'Hindi', tam: 'Tamil', ta: 'Tamil', kan: 'Kannada', kn: 'Kannada', mal: 'Malayalam', ml: 'Malayalam', ben: 'Bengali', bn: 'Bengali', urd: 'Urdu', ur: 'Urdu', ara: 'Arabic', ar: 'Arabic', fra: 'French', fre: 'French', fr: 'French', deu: 'German', ger: 'German', de: 'German', spa: 'Spanish', es: 'Spanish', ita: 'Italian', it: 'Italian', jpn: 'Japanese', ja: 'Japanese', kor: 'Korean', ko: 'Korean', zho: 'Chinese', chi: 'Chinese', zh: 'Chinese', por: 'Portuguese', pt: 'Portuguese', rus: 'Russian', ru: 'Russian' };
+  return names[code] || language?.trim();
+}
 function trackName(track, type) {
-  const title = track.title?.trim();
-  const language = track.language?.trim();
+  const title = displayTrackLanguage(track.title?.trim());
+  const language = displayTrackLanguage(track.language);
   return title && language && title.toLowerCase() !== language.toLowerCase() ? `${title} · ${language}` : title || language || `${type === 'audio' ? 'Audio' : 'Subtitle'} track ${track.id}`;
 }
 async function showTrackMenu(type, anchor) {
@@ -216,15 +242,19 @@ async function showTrackMenu(type, anchor) {
     menu.classList.add('hidden');
   }
 }
-async function cycleTrack(type) {
+async function cycleTrack(type, keyboard = false) {
   try {
     const tracks = await video.getTracks(type);
-    if (!tracks.length) return showTrackMenu(type, type === 'audio' ? $('audioTrack') : $('subtitleTrack'));
+    if (!tracks.length) {
+      if (keyboard) return showKeyboardStatus(type === 'audio' ? 'No audio tracks' : 'No subtitles');
+      return showTrackMenu(type, type === 'audio' ? $('audioTrack') : $('subtitleTrack'));
+    }
     const options = [{ id: 'no', selected: tracks.every(track => !track.selected) }, ...tracks];
     const current = options.findIndex(track => track.selected);
     const next = options[(current + 1) % options.length];
     await video.selectTrack(type, String(next.id));
     $('trackMenu').classList.add('hidden');
+    if (keyboard) showKeyboardStatus(next.id === 'no' ? (type === 'audio' ? 'Audio off' : 'Subtitles off') : (type === 'audio' ? 'Audio: ' : 'Subtitles: ') + trackName(next, type));
   } catch (error) {
     reportError(`Could not change ${type === 'audio' ? 'audio' : 'subtitle'} track: ${error.message || error}`);
   }
@@ -338,25 +368,28 @@ document.addEventListener('keydown', event => {
   if ((target && target.closest('input,textarea,select,[contenteditable="true"]')) || event.metaKey || event.shiftKey || event.ctrlKey && event.altKey) return;
   const key = event.key.toLowerCase();
   let handled = true;
-  let indicator = null;
-  if (event.altKey && event.code === 'ArrowLeft') { seekBy(-60); indicator = 'bottomControls'; }
-  else if (event.altKey && event.code === 'ArrowRight') { seekBy(60); indicator = 'bottomControls'; }
-  else if (event.ctrlKey && event.code === 'ArrowLeft') { seekBy(-30); indicator = 'bottomControls'; }
-  else if (event.ctrlKey && event.code === 'ArrowRight') { seekBy(30); indicator = 'bottomControls'; }
-  else if (event.code === 'Space') togglePlay();
-  else if (event.code === 'ArrowLeft') { seekBy(-10); indicator = 'bottomControls'; }
-  else if (event.code === 'ArrowRight') { seekBy(10); indicator = 'bottomControls'; }
-  else if (event.code === 'ArrowUp') { setVolume(volumeLevel + 5); indicator = 'volumePanel'; }
-  else if (event.code === 'ArrowDown') { setVolume(volumeLevel - 5); indicator = 'volumePanel'; }
-  else if (key === 'm') { setVolume(muted ? (previousVolumeLevel || 75) : 0); indicator = 'volumePanel'; }
-  else if (key === 'v') void cycleTrack('sub');
-  else if (key === 'b') void cycleTrack('audio');
+  if (event.altKey && event.code === 'ArrowLeft') void seekForKeyboard(-60);
+  else if (event.altKey && event.code === 'ArrowRight') void seekForKeyboard(60);
+  else if (event.ctrlKey && event.code === 'ArrowLeft') void seekForKeyboard(-30);
+  else if (event.ctrlKey && event.code === 'ArrowRight') void seekForKeyboard(30);
+  else if (event.code === 'Space') void togglePlay().then(playing => { if (playing != null) showKeyboardStatus(playing ? 'Playing' : 'Paused'); });
+  else if (event.code === 'ArrowLeft') void seekForKeyboard(-10);
+  else if (event.code === 'ArrowRight') void seekForKeyboard(10);
+  else if (event.code === 'ArrowUp') { setVolume(volumeLevel + 5); showKeyboardStatus(`Volume ${volumeLevel}%`); }
+  else if (event.code === 'ArrowDown') { setVolume(volumeLevel - 5); showKeyboardStatus(`Volume ${volumeLevel}%`); }
+  else if (!event.altKey && !event.ctrlKey && !event.metaKey && /^Digit[0-9]$|^Numpad[0-9]$/.test(event.code)) {
+    const number = Number(event.code.at(-1));
+    void seekToPercentage(number * 10);
+  }
+  else if (key === 'm') { const wasMuted = muted; setVolume(wasMuted ? (previousVolumeLevel || 75) : 0); showKeyboardStatus(wasMuted ? 'Unmuted' : 'Muted'); }
+  else if (key === 'v') void cycleTrack('sub', true);
+  else if (key === 'b') void cycleTrack('audio', true);
   else if (key === 'f') void setFullscreen(!fullscreen);
   else if (key === 'i' || event.code === 'Escape') { if (fullscreen) void setFullscreen(false); }
   else handled = false;
   if (handled) {
     event.preventDefault();
-    if (indicator) showKeyboardIndicator(indicator);
+    hideControls();
   }
 });
 
