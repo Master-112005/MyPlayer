@@ -24,6 +24,42 @@ replace('native/mpv-addon/src/mpv_addon.cc',
   '      InstanceMethod("setVolume", &MpvPlayer::SetVolume),\n      InstanceMethod("setPanScan", &MpvPlayer::SetPanScan),\n',
   'InstanceMethod("setPanScan"');
 replace('native/mpv-addon/src/mpv_addon.cc',
+  '      InstanceMethod("setPanScan", &MpvPlayer::SetPanScan),\n',
+  '      InstanceMethod("setPanScan", &MpvPlayer::SetPanScan),\n      InstanceMethod("setSubtitlePosition", &MpvPlayer::SetSubtitlePosition),\n      InstanceMethod("setSubtitleScale", &MpvPlayer::SetSubtitleScale),\n',
+  'InstanceMethod("setSubtitlePosition"');
+replace('native/mpv-addon/src/mpv_addon.cc',
+  '  Napi::Value SeekRelative(const Napi::CallbackInfo& info) {',
+  '  Napi::Value SetSubtitlePosition(const Napi::CallbackInfo& info) {\n    Napi::Env env = info.Env();\n    if (info.Length() < 1 || !info[0].IsNumber()) {\n      Napi::TypeError::New(env, "setSubtitlePosition(value) requires a number").ThrowAsJavaScriptException();\n      return env.Undefined();\n    }\n    int64_t position = std::clamp<int64_t>(info[0].As<Napi::Number>().Int64Value(), 0, 100);\n    const char* verticalAlign = position == 0 ? "top" : "bottom";\n    // Honor app placement for text tracks by removing ASS script-position overrides.\n    // shortcut: bitmap subtitles keep authored placement; moving them needs a custom renderer.\n    int ret = mpv_set_property_string(handle_, "sub-ass-override", "strip");\n    if (ret < 0) throw_mpv_error(env, "setSubtitlePosition(ASS override)", ret);\n    ret = mpv_set_property_string(handle_, "sub-align-y", verticalAlign);\n    if (ret < 0) throw_mpv_error(env, "setSubtitlePosition(alignment)", ret);\n    ret = mpv_set_property(handle_, "sub-pos", MPV_FORMAT_INT64, &position);\n    if (ret < 0) throw_mpv_error(env, "setSubtitlePosition", ret);\n    return env.Undefined();\n  }\n\n  Napi::Value SetSubtitleScale(const Napi::CallbackInfo& info) {\n    Napi::Env env = info.Env();\n    if (info.Length() < 1 || !info[0].IsNumber()) {\n      Napi::TypeError::New(env, "setSubtitleScale(value) requires a number").ThrowAsJavaScriptException();\n      return env.Undefined();\n    }\n    double scale = std::clamp(info[0].As<Napi::Number>().DoubleValue(), 0.5, 3.0);\n    int ret = mpv_set_property(handle_, "sub-scale", MPV_FORMAT_DOUBLE, &scale);\n    if (ret < 0) throw_mpv_error(env, "setSubtitleScale", ret);\n    return env.Undefined();\n  }\n\n  Napi::Value SeekRelative(const Napi::CallbackInfo& info) {',
+  'Napi::Value SetSubtitlePosition');
+replace('native/mpv-addon/src/mpv_addon.cc',
+  '  Napi::Value SetSubtitlePosition(const Napi::CallbackInfo& info) {\n    Napi::Env env = info.Env();\n    if (info.Length() < 1 || !info[0].IsNumber()) {\n      Napi::TypeError::New(env, "setSubtitlePosition(value) requires a number").ThrowAsJavaScriptException();\n      return env.Undefined();\n    }\n    int64_t position = std::clamp<int64_t>(info[0].As<Napi::Number>().Int64Value(), 0, 100);\n    int ret = mpv_set_property(handle_, "sub-pos", MPV_FORMAT_INT64, &position);\n    if (ret < 0) throw_mpv_error(env, "setSubtitlePosition", ret);\n    return env.Undefined();\n  }',
+  '  Napi::Value SetSubtitlePosition(const Napi::CallbackInfo& info) {\n    Napi::Env env = info.Env();\n    if (info.Length() < 1 || !info[0].IsNumber()) {\n      Napi::TypeError::New(env, "setSubtitlePosition(value) requires a number").ThrowAsJavaScriptException();\n      return env.Undefined();\n    }\n    int64_t position = std::clamp<int64_t>(info[0].As<Napi::Number>().Int64Value(), 0, 100);\n    const char* verticalAlign = position == 0 ? "top" : "bottom";\n    // Honor app placement for text tracks by removing ASS script-position overrides.\n    // shortcut: bitmap subtitles keep authored placement; moving them needs a custom renderer.\n    int ret = mpv_set_property_string(handle_, "sub-ass-override", "strip");\n    if (ret < 0) throw_mpv_error(env, "setSubtitlePosition(ASS override)", ret);\n    ret = mpv_set_property_string(handle_, "sub-align-y", verticalAlign);\n    if (ret < 0) throw_mpv_error(env, "setSubtitlePosition(alignment)", ret);\n    ret = mpv_set_property(handle_, "sub-pos", MPV_FORMAT_INT64, &position);\n    if (ret < 0) throw_mpv_error(env, "setSubtitlePosition", ret);\n    return env.Undefined();\n  }',
+  'setSubtitlePosition(ASS override)');
+replace('dist/main/mpv-service.js',
+  "    'player:set-panscan',\n",
+  "    'player:set-panscan',\n    'player:set-subtitle-position',\n    'player:set-subtitle-scale',\n",
+  "'player:set-subtitle-position'");
+replace('dist/main/mpv-service.js',
+  '    setVolume(value) {\n        this.assertAlive();',
+  '    setSubtitlePosition(value) {\n        this.assertAlive();\n        this.player.setSubtitlePosition(Math.max(0, Math.min(100, Math.round(finiteNumber(value, \'subtitle position\')))));\n    }\n    setSubtitleScale(value) {\n        this.assertAlive();\n        this.player.setSubtitleScale(Math.max(0.5, Math.min(3, finiteNumber(value, \'subtitle scale\'))));\n    }\n    setVolume(value) {\n        this.assertAlive();',
+  '    setSubtitlePosition(value)');
+replace('dist/main/mpv-service.js',
+  "        electron.ipcMain.handle(channel('player:set-panscan'), async (event, id, value) => this.getOwnedSession(event, id).setPanScan(finiteNumber(value, 'panscan')));\n",
+  "        electron.ipcMain.handle(channel('player:set-panscan'), async (event, id, value) => this.getOwnedSession(event, id).setPanScan(finiteNumber(value, 'panscan')));\n        electron.ipcMain.handle(channel('player:set-subtitle-position'), async (event, id, value) => this.getOwnedSession(event, id).setSubtitlePosition(finiteNumber(value, 'subtitle position')));\n        electron.ipcMain.handle(channel('player:set-subtitle-scale'), async (event, id, value) => this.getOwnedSession(event, id).setSubtitleScale(finiteNumber(value, 'subtitle scale')));\n",
+  "handle(channel('player:set-subtitle-position')");
+replace('dist/preload/index.cjs',
+  "        setPanScan: (value) => electron.ipcRenderer.invoke(channel('player:set-panscan'), id, value),\n",
+  "        setPanScan: (value) => electron.ipcRenderer.invoke(channel('player:set-panscan'), id, value),\n        setSubtitlePosition: (value) => electron.ipcRenderer.invoke(channel('player:set-subtitle-position'), id, value),\n        setSubtitleScale: (value) => electron.ipcRenderer.invoke(channel('player:set-subtitle-scale'), id, value),\n",
+  'setSubtitlePosition: (value)');
+replace('dist/renderer/mpv-video.js',
+  '    async setPanScan(value) {\n',
+  '    async setSubtitlePosition(value) {\n        await this.ensureReady();\n        await this.player?.setSubtitlePosition(value);\n    }\n    async setSubtitleScale(value) {\n        await this.ensureReady();\n        await this.player?.setSubtitleScale(value);\n    }\n    async setPanScan(value) {\n',
+  '    async setSubtitlePosition(value)');
+replace('dist/renderer/mpv-video.d.ts',
+  '    setPanScan(value: number): Promise<void>;\n',
+  '    setPanScan(value: number): Promise<void>;\n    setSubtitlePosition(value: number): Promise<void>;\n    setSubtitleScale(value: number): Promise<void>;\n',
+  '    setSubtitlePosition(value: number): Promise<void>;');
+replace('native/mpv-addon/src/mpv_addon.cc',
   '  Napi::Value SetVolume(const Napi::CallbackInfo& info) {',
   '  Napi::Value SetPanScan(const Napi::CallbackInfo& info) {\n    Napi::Env env = info.Env();\n    if (info.Length() < 1 || !info[0].IsNumber()) {\n      Napi::TypeError::New(env, "setPanScan(value) requires a number").ThrowAsJavaScriptException();\n      return env.Undefined();\n    }\n    double value = std::clamp(info[0].As<Napi::Number>().DoubleValue(), 0.0, 1.0);\n    int ret = mpv_set_property(handle_, "panscan", MPV_FORMAT_DOUBLE, &value);\n    if (ret < 0) throw_mpv_error(env, "setPanScan", ret);\n    return env.Undefined();\n  }\n\n  Napi::Value SetVolume(const Napi::CallbackInfo& info) {',
   'Napi::Value SetPanScan');
@@ -141,6 +177,14 @@ replace('native/mpv-addon/src/mpv_addon.cc',
   '    return env.Undefined();\n  }\n\n  Napi::Value SetVolume',
   '    return env.Undefined();\n  }\n\n  Napi::Value SeekRelative(const Napi::CallbackInfo& info) {\n    Napi::Env env = info.Env();\n    if (info.Length() < 1 || !info[0].IsNumber()) {\n      Napi::TypeError::New(env, "seekRelative(seconds) requires a number").ThrowAsJavaScriptException();\n      return env.Undefined();\n    }\n    double seconds = info[0].As<Napi::Number>().DoubleValue();\n    int ret = command({"seek", std::to_string(seconds), "relative+exact"});\n    if (ret < 0) throw_mpv_error(env, "seekRelative", ret);\n    return env.Undefined();\n  }\n\n  Napi::Value SetVolume',
   'Napi::Value SeekRelative');
+replace('native/mpv-addon/src/mpv_addon.cc',
+  'int ret = command({"seek", std::to_string(seconds), "relative+exact"});',
+  'int ret = command({"seek", std::to_string(seconds), "relative+keyframes"});',
+  'std::to_string(seconds), "relative+keyframes"');
+replace('native/mpv-addon/src/mpv_addon.cc',
+  'set_option("hwdec", hwdec && hwdec[0] ? hwdec : "no");',
+  'set_option("hwdec", hwdec && hwdec[0] ? hwdec : "auto-safe");',
+  'hwdec && hwdec[0] ? hwdec : "auto-safe"');
 replace('native/mpv-addon/src/mpv_addon.cc',
   '#include <cstdlib>\n', '#include <cctype>\n#include <cstdlib>\n', '#include <cctype>');
 replace('native/mpv-addon/src/mpv_addon.cc',

@@ -17,8 +17,28 @@
     </nav>
       <div class="top-actions">
       <div class="top-volume auto-hide" id="volumePanel" title="Volume"><button class="volume-mute" id="muteVolume" type="button" aria-label="Mute" title="Mute"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12 0a5 5 0 0 1 0 6"/></svg></button><input id="volume" type="range" min="0" max="100" value="75" aria-label="Volume"><output id="volumeValue" for="volume">75%</output></div>
+      <button class="glass close auto-hide settings-button" id="videoSettingsButton" type="button" aria-label="Video settings" title="Video settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0 1.065-2.572c-1.756-.426-1.756-2.924 0-3.35A1.724 1.724 0 0 0 5.382 7.78c-.94-1.543.826-3.31 2.37-2.37.996.608 2.27.078 2.573-1.066z"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg></button>
       <button class="glass close auto-hide" id="close" aria-label="Close video" title="Close"><svg viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
     </div>
+    <section class="player-settings hidden" id="playerSettings" aria-label="Video settings">
+      <div class="settings-heading">Video settings</div>
+      <div class="setting-control">
+        <button class="setting-select" id="subtitlePositionButton" type="button" aria-haspopup="listbox" aria-expanded="false"><span>Subtitle bottom</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button>
+        <div class="setting-options hidden" id="subtitlePositionOptions" role="listbox" aria-label="Subtitle position">
+          <button type="button" role="option" data-value="top">Subtitle top</button>
+          <button type="button" role="option" data-value="bottom">Subtitle bottom</button>
+        </div>
+      </div>
+      <div class="setting-control">
+        <button class="setting-select" id="subtitleSizeButton" type="button" aria-haspopup="listbox" aria-expanded="false"><span>Subtitle size medium</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button>
+        <div class="setting-options hidden" id="subtitleSizeOptions" role="listbox" aria-label="Subtitle size">
+          <button type="button" role="option" data-value="0.75">Subtitle size small</button>
+          <button type="button" role="option" data-value="1">Subtitle size medium</button>
+          <button type="button" role="option" data-value="1.25">Subtitle size large</button>
+          <button type="button" role="option" data-value="1.5">Subtitle size extra large</button>
+        </div>
+      </div>
+    </section>
     <div class="track-menu auto-hide hidden" id="trackMenu" role="menu" aria-label="Track choices"></div>
     <button class="glass resume-prompt hidden" id="resumePrompt" type="button" aria-label="Continue playback"></button>
     <button class="glass seek-button skip-back auto-hide" id="back" aria-label="Back 10 seconds" title="Back 10 seconds"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M9.4 7.6H4.2V2.5M4.3 7.6a12.4 12.4 0 1 1-.1 16.7"/><text x="16" y="20.4">10</text></svg></button>

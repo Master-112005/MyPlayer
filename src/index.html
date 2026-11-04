@@ -12,18 +12,44 @@
   <main class="window-shell home-open">
     <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
     <div class="startup-splash" aria-label="MyMusic" role="status">
-      <svg class="startup-note" viewBox="0 0 180 180" aria-hidden="true">
+      <div class="startup-mark startup-music-mark"><svg class="startup-note" viewBox="0 0 180 180" aria-hidden="true">
         <defs>
           <linearGradient id="noteGlass" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff"/><stop offset=".45" stop-color="#dce3eb" stop-opacity=".68"/><stop offset="1" stop-color="#fff" stop-opacity=".92"/></linearGradient>
           <linearGradient id="noteShine" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff" stop-opacity=".95"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
         </defs>
-        <path d="M67 31v94M125 17v94M67 31l58-14" fill="none" stroke="url(#noteGlass)" stroke-width="19" stroke-linecap="round" stroke-linejoin="round"/>
-        <ellipse cx="52" cy="133" rx="27" ry="20" transform="rotate(-22 52 133)" fill="url(#noteGlass)"/>
-        <ellipse cx="110" cy="119" rx="27" ry="20" transform="rotate(-22 110 119)" fill="url(#noteGlass)"/>
-        <path d="M64 28v39M122 15v35" fill="none" stroke="url(#noteShine)" stroke-width="4" stroke-linecap="round"/>
-        <path d="M33 129c7-10 17-14 27-12M91 115c7-10 17-14 27-12" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="4" stroke-linecap="round"/>
-      </svg>
-      <svg class="startup-clapperboard" viewBox="0 0 180 180" aria-hidden="true"><defs><linearGradient id="clapperGlass" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff"/><stop offset=".48" stop-color="#dce3eb" stop-opacity=".68"/><stop offset="1" stop-color="#fff" stop-opacity=".92"/></linearGradient></defs><rect x="25" y="53" width="130" height="91" rx="15" fill="url(#clapperGlass)" fill-opacity=".3" stroke="url(#clapperGlass)" stroke-width="8"/><path d="m29 46 111-24 9 31-111 24z" fill="url(#clapperGlass)" fill-opacity=".62" stroke="#fff" stroke-opacity=".9" stroke-width="6" stroke-linejoin="round"/><path d="m57 40 19 29m20-38 19 29" fill="none" stroke="#fff" stroke-opacity=".88" stroke-width="9" stroke-linecap="round"/><path d="m78 82 31 17-31 18z" fill="#fff" fill-opacity=".8" stroke="#fff" stroke-width="3" stroke-linejoin="round"/></svg><div class="startup-name"><span class="startup-music-name">MyMusic</span><span class="startup-cinema-name">MyCinema</span></div>
+        <path d="M92 117V49c20-5 37-16 51-32v30c-13 14-30 23-51 28v43c0 16-14 29-32 32-16 3-29-5-28-18 1-14 16-26 33-29 11-2 21 3 27 14Z" fill="url(#noteGlass)" stroke="#fff" stroke-opacity=".9" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M96 54v53c0 8-2 14-6 19M97 54c14-5 27-13 38-24M44 139c5-10 15-17 26-19" fill="none" stroke="url(#noteShine)" stroke-width="4.2" stroke-linecap="round"/>
+        </svg><span class="startup-reflection"></span></div>
+      <div class="startup-mark startup-cinema-mark">
+        <svg class="startup-clapperboard" viewBox="0 0 180 180" aria-hidden="true">
+          <defs>
+            <linearGradient id="clapperGlass" x1="0" y1="0" x2="1" y2="1">
+              <stop stop-color="#fff" stop-opacity=".9"/><stop offset=".5" stop-color="#dce3eb" stop-opacity=".48"/><stop offset="1" stop-color="#fff" stop-opacity=".82"/>
+            </linearGradient>
+            <clipPath id="clapperLidClip"><path d="M29 59Q28 55 33 54L144 30Q148 29 150 34L156 55Q157 59 153 60L41 84Q37 85 35 81Z"/></clipPath>
+            <clipPath id="clapperBarClip"><rect x="35" y="72" width="113" height="22" rx="5"/></clipPath>
+          </defs>
+          <rect x="29" y="67" width="123" height="81" rx="17" fill="url(#clapperGlass)" fill-opacity=".34" stroke="#fff" stroke-opacity=".9" stroke-width="6"/>
+          <rect x="35" y="72" width="113" height="22" rx="5" fill="url(#clapperGlass)" fill-opacity=".72"/>
+          <g clip-path="url(#clapperBarClip)">
+            <path d="m39 69 13-3 24 31-13 3zm34-7 13-3 24 31-13 3zm34-7 13-3 24 31-13 3z" fill="#fff" fill-opacity=".72"/>
+            <path d="m57 67 8-2 24 31-8 2zm34-7 8-2 24 31-8 2zm34-7 8-2 24 31-8 2z" fill="#111" fill-opacity=".48"/>
+          </g>
+          <g class="cinema-clapper-top">
+            <path d="M29 59Q28 55 33 54L144 30Q148 29 150 34L156 55Q157 59 153 60L41 84Q37 85 35 81Z" fill="url(#clapperGlass)" fill-opacity=".94" stroke="#fff" stroke-opacity=".96" stroke-width="3"/>
+            <g clip-path="url(#clapperLidClip)">
+              <path d="m39 57 15-3 24 31-15 3zm34-7 15-3 24 31-15 3zm34-7 15-3 24 31-15 3z" fill="#fff" fill-opacity=".75"/>
+              <path d="m57 53 8-2 24 31-8 2zm34-7 8-2 24 31-8 2zm34-7 8-2 24 31-8 2z" fill="#111" fill-opacity=".48"/>
+            </g>
+            <path d="m38 79 114-24" fill="none" stroke="#fff" stroke-opacity=".72" stroke-width="2"/>
+          </g>
+          <circle cx="42" cy="79" r="11" fill="url(#clapperGlass)" stroke="#fff" stroke-opacity=".96" stroke-width="3"/>
+          <circle cx="42" cy="79" r="6.5" fill="#fff" fill-opacity=".22"/>
+          <path d="m75 99 33 19-33 19z" fill="#fff" fill-opacity=".86" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/>
+        </svg>
+        <span class="startup-reflection"></span>
+      </div>
+      <div class="startup-name"><span class="startup-music-name">MyMusic</span><span class="startup-cinema-name">MyCinema</span></div>
     </div>
     <section class="cinema-view hidden" id="cinemaView" aria-label="MyCinema">
       <div class="cinema-notes" id="cinemaNotes" aria-hidden="true"></div>

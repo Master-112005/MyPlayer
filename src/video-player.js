@@ -11,6 +11,7 @@ let leaveTimer;
 let keyboardStatusTimer;
 let progressTimer;
 let progressPending = false;
+let lastProgressUiUpdate = 0;
 let volumeFrame = 0;
 let closing = false;
 let moving = false;
@@ -18,6 +19,7 @@ let scrubbing = false;
 let playbackDuration = 0;
 let lastAspect = 0;
 let fullscreen = false;
+let playingState = null;
 let volumeLevel = Number($('volume').value) || 75;
 let volumeLimit = 100;
 let volumeSettingsReady;
@@ -27,6 +29,52 @@ let currentFilePath = null;
 let pendingResume = null;
 let resumeTimer;
 let lastResumeSave = 0;
+const subtitleSettingsKey = 'mycinema-subtitle-settings';
+let subtitleSettings = (() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(subtitleSettingsKey) || '{}');
+    return {
+      position: saved.position === 'top' ? 'top' : 'bottom',
+      size: ['0.75', '1', '1.25', '1.5'].includes(String(saved.size)) ? String(saved.size) : '1'
+    };
+  } catch { return { position: 'bottom', size: '1' }; }
+})();
+
+async function applySubtitleSettings() {
+  updateSubtitleSettingOptions();
+  try {
+    await Promise.all([
+      video.setSubtitlePosition(subtitleSettings.position === 'top' ? 0 : 100),
+      video.setSubtitleScale(Number(subtitleSettings.size))
+    ]);
+  } catch (error) { reportError(`Could not apply subtitle settings: ${error.message || error}`); }
+}
+
+function updateSubtitleSettingOptions() {
+  const selections = [
+    { button: 'subtitlePositionButton', menu: 'subtitlePositionOptions', value: subtitleSettings.position },
+    { button: 'subtitleSizeButton', menu: 'subtitleSizeOptions', value: subtitleSettings.size }
+  ];
+  for (const { button, menu, value } of selections) {
+    const control = $(button);
+    const options = $(menu);
+    const selected = [...options.querySelectorAll('[role="option"]')].find(option => option.dataset.value === value);
+    control.querySelector('span').textContent = selected?.textContent || '';
+    for (const option of options.querySelectorAll('[role="option"]')) {
+      const active = option === selected;
+      option.classList.toggle('selected', active);
+      option.setAttribute('aria-selected', String(active));
+    }
+  }
+}
+
+function closeSubtitleSettingMenus(except = '') {
+  for (const id of ['subtitlePositionOptions', 'subtitleSizeOptions']) {
+    if (id === except) continue;
+    $(id).classList.add('hidden');
+    $(`${id === 'subtitlePositionOptions' ? 'subtitlePosition' : 'subtitleSize'}Button`).setAttribute('aria-expanded', 'false');
+  }
+}
 
 function timeText(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -46,6 +94,7 @@ function showControls() {
 function hideControls() {
   controls.forEach(control => control.classList.add('faded'));
   $('trackMenu').classList.add('hidden');
+  $('playerSettings').classList.add('hidden');
 }
 function showKeyboardStatus(message) {
   const status = $('keyboardStatus');
@@ -65,7 +114,7 @@ function applyVolume() {
     video.setVolume(volumeLevel).catch(error => reportError(`Volume change failed: ${error.message || error}`));
   });
 }
-async function updateProgress() {
+async function updateProgress(info = null) {
   if (closing || !video.playerId) return;
   if (scrubbing && playbackDuration) {
     const current = Number($('timeline').value) / 1000 * playbackDuration;
@@ -73,14 +122,14 @@ async function updateProgress() {
     $('remainingTime').textContent = `-${timeText(Math.max(0, playbackDuration - current))}`;
     return;
   }
-  if (progressPending) return;
-  progressPending = true;
+  if (!info && progressPending) return;
+  if (!info) progressPending = true;
   try {
-  const info = await video.getPlaybackInfo();
-  const duration = Number(info.duration) || 0;
-  const current = Number(info.currentTime) || 0;
+  const playback = info || await video.getPlaybackInfo();
+  const duration = Number(playback.duration) || 0;
+  const current = Number(playback.currentTime) || 0;
   playbackDuration = duration;
-  setPlaying(!info.paused);
+  setPlaying(!playback.paused);
   $('currentTime').textContent = timeText(scrubbing ? Number($('timeline').value) / 1000 * duration : current);
   $('remainingTime').textContent = `-${timeText(Math.max(0, duration - (scrubbing ? Number($('timeline').value) / 1000 * duration : current)))}`;
   if (!scrubbing) $('timeline').value = duration ? String(Math.round(current / duration * 1000)) : '0';
@@ -92,7 +141,7 @@ async function updateProgress() {
   } catch (error) {
     if (!closing) reportError(`Could not read playback progress: ${error.message || error}`);
   } finally {
-    progressPending = false;
+    if (!info) progressPending = false;
   }
 }
 async function openVideo(filePath, title) {
@@ -113,9 +162,13 @@ async function openVideo(filePath, title) {
   video.resetVideoDimensions();
   if (progressTimer) clearInterval(progressTimer);
   try {
+    await applySubtitleSettings();
     await video.open(filePath);
-    const saved = await window.player.getVideoResume(filePath);
-    const { duration } = await video.getPlaybackInfo();
+    const [saved, playback] = await Promise.all([
+      window.player.getVideoResume(filePath),
+      video.getPlaybackInfo()
+    ]);
+    const { duration } = playback;
     playbackDuration = Number(duration) || 0;
     progressTimer = setInterval(updateProgress, 500);
     void updateProgress();
@@ -161,10 +214,10 @@ function seekBy(seconds) {
 }
 async function seekToPercentage(percent) {
   try {
-    const { duration } = await video.getPlaybackInfo();
+    const { currentTime, duration } = await video.getPlaybackInfo();
     if (duration > 0) {
       const position = duration * percent / 100;
-      await video.seek(position);
+      await video.seekRelative(position - currentTime);
       showKeyboardStatus(timeText(position));
     }
   } catch (error) { reportError(`Seek failed: ${error.message || error}`); }
@@ -174,11 +227,13 @@ async function seekForKeyboard(seconds) {
     const { currentTime, duration } = await video.getPlaybackInfo();
     if (duration <= 0) return;
     const position = Math.max(0, Math.min(duration, currentTime + seconds));
-    await video.seek(position);
+    await video.seekRelative(seconds);
     showKeyboardStatus(timeText(position));
   } catch (error) { reportError(`Seek failed: ${error.message || error}`); }
 }
 function setPlaying(playing) {
+  if (playingState === playing) return;
+  playingState = playing;
   $('player').classList.toggle('playing', playing);
   $('toggle').setAttribute('aria-label', playing ? 'Pause' : 'Play');
   $('toggle').title = playing ? 'Pause' : 'Play';
@@ -311,7 +366,11 @@ video.addEventListener('mpv-state', event => {
       window.player.setVideoAspect(video.videoWidth, video.videoHeight);
     }
   }
-  updateProgress();
+  const now = performance.now();
+  if (now - lastProgressUiUpdate >= 250) {
+    lastProgressUiUpdate = now;
+    void updateProgress({ currentTime: event.detail.time, duration: event.detail.duration, paused: event.detail.status !== 'Playing' });
+  }
 });
 video.addEventListener('mpv-error', event => reportError(`Video playback error: ${event.detail}`));
 window.player.onVideoOpen(item => openVideo(item.filePath, item.title));
@@ -320,6 +379,35 @@ $('back').addEventListener('click', () => seekBy(-10));
 $('forward').addEventListener('click', () => seekBy(10));
 $('audioTrack').addEventListener('click', event => showTrackMenu('audio', event.currentTarget));
 $('subtitleTrack').addEventListener('click', event => showTrackMenu('sub', event.currentTarget));
+$('videoSettingsButton').addEventListener('click', () => {
+  const panel = $('playerSettings');
+  showControls();
+  panel.classList.toggle('hidden');
+  updateSubtitleSettingOptions();
+});
+function toggleSubtitleSettingMenu(buttonId, menuId) {
+  const menu = $(menuId);
+  const opening = menu.classList.contains('hidden');
+  closeSubtitleSettingMenus(menuId);
+  menu.classList.toggle('hidden', !opening);
+  $(buttonId).setAttribute('aria-expanded', String(opening));
+}
+function chooseSubtitleSetting(kind, value) {
+  subtitleSettings = { ...subtitleSettings, [kind]: value };
+  localStorage.setItem(subtitleSettingsKey, JSON.stringify(subtitleSettings));
+  closeSubtitleSettingMenus();
+  applySubtitleSettings();
+}
+$('subtitlePositionButton').addEventListener('click', () => toggleSubtitleSettingMenu('subtitlePositionButton', 'subtitlePositionOptions'));
+$('subtitleSizeButton').addEventListener('click', () => toggleSubtitleSettingMenu('subtitleSizeButton', 'subtitleSizeOptions'));
+$('subtitlePositionOptions').addEventListener('click', event => {
+  const option = event.target.closest('[role="option"]');
+  if (option) chooseSubtitleSetting('position', option.dataset.value);
+});
+$('subtitleSizeOptions').addEventListener('click', event => {
+  const option = event.target.closest('[role="option"]');
+  if (option) chooseSubtitleSetting('size', option.dataset.value);
+});
 $('timeline').addEventListener('pointerdown', () => { scrubbing = true; });
 $('timeline').addEventListener('input', () => { scrubbing = true; updateProgress(); });
 $('timeline').addEventListener('change', async () => {
@@ -362,10 +450,12 @@ document.addEventListener('mouseleave', () => {
 });
 document.addEventListener('click', event => {
   if (!event.target.closest('#trackMenu, #audioTrack, #subtitleTrack')) $('trackMenu').classList.add('hidden');
+  if (!event.target.closest('#playerSettings, #videoSettingsButton')) $('playerSettings').classList.add('hidden');
+  if (!event.target.closest('#playerSettings')) closeSubtitleSettingMenus();
 });
 document.addEventListener('keydown', event => {
   const target = event.target instanceof Element ? event.target : null;
-  if ((target && target.closest('input,textarea,select,[contenteditable="true"]')) || event.metaKey || event.shiftKey || event.ctrlKey && event.altKey) return;
+  if ((target && target.closest('input,textarea,select,[contenteditable="true"],.setting-select,.setting-options')) || event.metaKey || event.shiftKey || event.ctrlKey && event.altKey) return;
   const key = event.key.toLowerCase();
   let handled = true;
   if (event.altKey && event.code === 'ArrowLeft') void seekForKeyboard(-60);

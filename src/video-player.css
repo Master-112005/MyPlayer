@@ -1,10 +1,12 @@
 *{box-sizing:border-box}
 html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif}
 body{user-select:none}
-.player{position:relative;width:100%;height:100%;overflow:hidden;border-radius:22px;background:#000;isolation:isolate}
+.player{position:relative;width:100%;height:100%;overflow:hidden;border-radius:22px;background:#000;isolation:isolate;animation:cinema-window-fade-in .28s ease-out both}
 .player,.player::after,mpv-video{-electron-corner-smoothing:60%}
 .player:after{position:absolute;z-index:1;inset:0;border:1px solid rgba(255,255,255,.2);border-radius:inherit;content:"";pointer-events:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
 mpv-video{position:absolute;inset:0;width:100%;height:100%;display:block;overflow:hidden;border-radius:inherit}
+@keyframes cinema-window-fade-in{from{opacity:0}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){.player{animation:none}}
 .drag-strip{position:absolute;z-index:2;top:0;left:0;right:255px;height:17px;-webkit-app-region:drag}
 .glass{display:grid;place-items:center;padding:0;border:1px solid rgba(255,255,255,.32);border-radius:50%;background:linear-gradient(145deg,rgba(255,255,255,.24),rgba(255,255,255,.08));box-shadow:inset 0 1px 1px rgba(255,255,255,.32),0 6px 24px rgba(0,0,0,.32);backdrop-filter:blur(24px) saturate(150%);-webkit-backdrop-filter:blur(24px) saturate(150%);color:#fff;cursor:pointer;transition:opacity .32s,transform .2s,background .2s,border-color .2s}
 .glass:hover{transform:scale(1.06);background:rgba(255,255,255,.32);border-color:rgba(255,255,255,.55)}
@@ -103,6 +105,22 @@ html.fullscreen-mode mpv-video{border-radius:0}
 .resume-prompt{position:absolute;z-index:7;top:62px;right:16px;min-height:39px;padding:0 14px;border-radius:20px;color:#fff;font:inherit;font-size:12px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
 .resume-prompt:not(.hidden){opacity:1;pointer-events:auto}
 @media(max-width:560px){.resume-prompt{top:53px;right:9px;min-height:35px;font-size:11px}}
+
+.settings-button{flex:none}
+.settings-button svg{width:18px;height:18px}
+.player-settings{position:absolute;z-index:11;top:62px;right:63px;width:min(270px,calc(100% - 32px));padding:11px;border:1px solid rgba(255,255,255,.25);border-radius:18px;background:linear-gradient(145deg,rgba(40,40,40,.94),rgba(12,12,12,.92));box-shadow:0 16px 44px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.12);backdrop-filter:blur(28px) saturate(145%);-webkit-backdrop-filter:blur(28px) saturate(145%)}
+.settings-heading{padding:2px 3px 8px;color:rgba(255,255,255,.56);font-size:9px;font-weight:700;letter-spacing:.11em;text-transform:uppercase}
+.setting-control{position:relative;margin-top:6px}
+.setting-select{width:100%;height:38px;display:flex;align-items:center;justify-content:space-between;padding:0 11px;border:1px solid rgba(255,255,255,.2);border-radius:13px;background:linear-gradient(145deg,rgba(255,255,255,.11),rgba(255,255,255,.045));box-shadow:inset 0 1px 0 rgba(255,255,255,.08);color:#fff;font:inherit;font-size:12px;text-align:left;cursor:pointer;transition:background .18s,border-color .18s}
+.setting-select:hover,.setting-select[aria-expanded="true"]{border-color:rgba(255,255,255,.42);background:rgba(255,255,255,.14)}
+.setting-select svg{width:17px;height:17px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;transition:transform .18s}
+.setting-select[aria-expanded="true"] svg{transform:rotate(180deg)}
+.setting-options{position:absolute;z-index:2;top:calc(100% + 5px);left:0;right:0;max-height:160px;overflow:auto;padding:4px;border:1px solid rgba(255,255,255,.22);border-radius:13px;background:rgba(25,25,25,.97);box-shadow:0 12px 32px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.1);backdrop-filter:blur(24px) saturate(140%);-webkit-backdrop-filter:blur(24px) saturate(140%)}
+.setting-options button{width:100%;min-height:32px;padding:6px 9px;border:1px solid transparent;border-radius:9px;background:transparent;color:rgba(255,255,255,.84);font:inherit;font-size:11px;text-align:left;cursor:pointer;transition:background .15s,border-color .15s}
+.setting-options button:hover{background:rgba(255,255,255,.1)}
+.setting-options button.selected{border-color:rgba(255,255,255,.24);background:linear-gradient(100deg,rgba(255,255,255,.24),rgba(255,255,255,.1));color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+.setting-select:focus-visible,.setting-options button:focus-visible{outline:2px solid rgba(255,255,255,.68);outline-offset:2px}
+@media(max-width:560px){.player-settings{top:54px;right:50px;width:min(270px,calc(100% - 20px));padding:12px}}
 
 
 @property --scroll-fade-top{syntax:"<length>";inherits:false;initial-value:0px}
