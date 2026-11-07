@@ -412,15 +412,21 @@ function openSearch() {
 }
 function addTrackToPlaylist(path) {
   if (!playlists.length) { showToast('Create a playlist first'); return; }
-  trackToAdd = path; selectedPlaylistIds.clear();
+  trackToAdd = path;
+  selectedPlaylistIds = new Set(playlists.filter(playlist => playlist.tracks.includes(path)).map(playlist => playlist.id));
   ui.playlistChoices.replaceChildren(...playlists.map(playlist => {
-    const option = document.createElement('button'); option.type = 'button'; option.className = 'playlist-choice'; option.setAttribute('aria-pressed', 'false');
+    const alreadyAdded = playlist.tracks.includes(path);
+    const option = document.createElement('button'); option.type = 'button'; option.className = 'playlist-choice';
+    option.classList.toggle('selected', alreadyAdded); option.setAttribute('aria-pressed', String(alreadyAdded));
     const name = document.createElement('span'); name.textContent = playlist.name; option.append(name);
-    if (playlist.tracks.includes(path)) { option.disabled = true; option.classList.add('already-added'); option.setAttribute('aria-label', `${playlist.name}, already contains this song`); const status = document.createElement('small'); status.textContent = 'Added'; option.append(status); }
+    const status = document.createElement('small');
+    status.textContent = alreadyAdded ? 'Added' : '';
+    option.append(status);
     option.addEventListener('click', () => {
       const selected = selectedPlaylistIds.has(playlist.id);
       if (selected) selectedPlaylistIds.delete(playlist.id); else selectedPlaylistIds.add(playlist.id);
       option.classList.toggle('selected', !selected); option.setAttribute('aria-pressed', String(!selected));
+      status.textContent = selected ? (alreadyAdded ? 'Remove' : '') : (alreadyAdded ? 'Added' : 'Add');
     });
     return option;
   }));
@@ -877,10 +883,30 @@ ui.playlistForm.addEventListener('submit', event => {
 });
 ui.addPlaylistForm.addEventListener('submit', event => {
   event.preventDefault();
-  const selected = playlists.filter(item => selectedPlaylistIds.has(item.id) && !item.tracks.includes(trackToAdd));
-  if (!selected.length || !trackToAdd) { showToast('Select at least one playlist'); return; }
-  selected.forEach(item => item.tracks.push(trackToAdd)); savePlaylists(); updatePlaybackHeader(); trackToAdd = null; selectedPlaylistIds.clear();
-  renderPlaylists(); renderQueue(); ui.addPlaylistDialog.close(); showToast(selected.length === 1 ? `Added to ${selected[0].name}` : `Added to ${selected.length} playlists`);
+  if (!trackToAdd) { ui.addPlaylistDialog.close(); return; }
+  const added = [];
+  const removed = [];
+  for (const playlist of playlists) {
+    const containsTrack = playlist.tracks.includes(trackToAdd);
+    const shouldContainTrack = selectedPlaylistIds.has(playlist.id);
+    if (shouldContainTrack && !containsTrack) {
+      playlist.tracks.push(trackToAdd);
+      added.push(playlist.name);
+    } else if (!shouldContainTrack && containsTrack) {
+      playlist.tracks = playlist.tracks.filter(path => path !== trackToAdd);
+      removed.push(playlist.name);
+      if (playbackSource?.type === 'playlist' && playbackSource.id === playlist.id) {
+        setPlaybackPaths(playlist.tracks, tracks[currentIndex]?.path);
+      }
+    }
+  }
+  if (added.length || removed.length) {
+    savePlaylists(); updatePlaybackHeader(); renderPlaylists(); renderQueue();
+  }
+  ui.addPlaylistDialog.close();
+  if (added.length && removed.length) showToast(`Updated playlists: added ${added.length}, removed ${removed.length}`);
+  else if (added.length) showToast(added.length === 1 ? `Added to ${added[0]}` : `Added to ${added.length} playlists`);
+  else if (removed.length) showToast(removed.length === 1 ? `Removed from ${removed[0]}` : `Removed from ${removed.length} playlists`);
 });
 ui.nowPlayingBar.addEventListener('click', showPlayer);
 ui.nowPlayingPlay.addEventListener('click', event => { event.stopPropagation(); ui.playButton.click(); });
@@ -903,7 +929,7 @@ function settleModeAnimation(animation, duration) {
     else timer = setTimeout(() => finish(true), duration + 120);
   });
 }
-async function resizePlayer(mini) {
+async function resizePlayer(mini, destination = 'player') {
   if (miniResizePending || miniModeSyncPending) return;
   miniResizePending = true;
   const shell = document.querySelector('.window-shell');
@@ -930,7 +956,8 @@ async function resizePlayer(mini) {
     if (!audio.paused && analyser) drawVisualizer();
     ui.modeToggle.title = miniMode ? 'Expand player' : 'Switch to mini player';
     ui.modeToggle.setAttribute('aria-label', ui.modeToggle.title);
-    showPlayer();
+    if (destination === 'home') showHome();
+    else showPlayer();
     fadeIn = shell.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing, fill: 'forwards' });
     await settleModeAnimation(fadeIn, duration);
   } catch (error) {
@@ -963,6 +990,19 @@ function togglePlayerWithF() {
   if (shell.classList.contains('player-open')) returnToPlayerEntry();
   else showPlayer();
 }
+async function returnHomeFromMini() {
+  if (miniResizePending || miniModeSyncPending) return;
+  await resizePlayer(false, 'home');
+}
+function seekSongToPercentage(percent) {
+  if (currentIndex < 0 || !Number.isFinite(audio.duration) || audio.duration <= 0) return false;
+  const position = audio.duration * Math.max(0, Math.min(100, percent)) / 100;
+  audio.currentTime = position;
+  setSeekValue(percent * 10);
+  ui.currentTime.textContent = formatTime(position);
+  ui.seekBar.setAttribute('aria-valuetext', `${formatTime(position)} of ${formatTime(audio.duration)}`);
+  return true;
+}
 // Mouse clicks should not leave controls as the keyboard's active target.
 // This keeps global shortcuts (especially Space) from activating the last
 // clicked button when the user switches from pointer to keyboard.
@@ -986,8 +1026,10 @@ window.addEventListener('keydown', event => {
     event.preventDefault(); ui.previousButton.click();
   } else if (event.code === 'ArrowRight') {
     event.preventDefault(); ui.nextButton.click();
-  } else if (event.code === 'KeyH' && !miniMode) {
-    event.preventDefault(); showHome();
+  } else if (event.code === 'KeyH') {
+    event.preventDefault();
+    if (miniMode) void returnHomeFromMini();
+    else showHome();
   } else if (event.code === 'KeyS' && !miniMode) {
     event.preventDefault(); openSearch();
   } else if (event.code === 'KeyM') {
@@ -999,7 +1041,13 @@ window.addEventListener('keydown', event => {
     void togglePlayerWithF();
   } else if (event.code === 'KeyI') {
     event.preventDefault();
+    if (miniResizePending || miniModeSyncPending) return;
     if (document.querySelector('.window-shell')?.classList.contains('player-open')) void resizePlayer(!miniMode);
+    else void resizePlayer(true);
+  } else if (/^(Digit|Numpad)[0-9]$/.test(event.code)) {
+    const number = Number(event.code.at(-1));
+    if (!seekSongToPercentage(number * 10)) return;
+    event.preventDefault();
   }
 });
 ui.previousButton.addEventListener('click', event => {

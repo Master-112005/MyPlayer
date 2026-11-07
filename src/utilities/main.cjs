@@ -1,8 +1,10 @@
-const { app, BrowserWindow, dialog, ipcMain, screen, shell } = require('electron');
+const { app, BrowserWindow, crashReporter, dialog, ipcMain, screen, shell } = require('electron');
 const { pathToFileURL } = require('node:url');
 const path = require('node:path');
 const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
+const sourceRoot = path.resolve(__dirname, '..');
+const projectRoot = path.resolve(sourceRoot, '..');
 const audioExtensions = new Set(['.mp3', '.m4a', '.aac', '.wav', '.flac', '.ogg', '.opus', '.wma', '.aiff', '.aif']);
 const videoExtensions = new Set(['.3g2', '.3gp', '.3gpp', '.amv', '.asf', '.avi', '.bik', '.cam', '.cine', '.divx', '.drc', '.dsm', '.dv', '.dat', '.evo', '.f4v', '.fli', '.flc', '.flv', '.gvi', '.h264', '.h265', '.hevc', '.m1v', '.m2p', '.m2t', '.m2ts', '.m2v', '.m4v', '.mjpeg', '.mjpg', '.mkv', '.mks', '.mod', '.mov', '.mp2', '.mp4', '.mpe', '.mpeg', '.mpeg1', '.mpeg2', '.mpeg4', '.mpg', '.mpv', '.mpv2', '.mts', '.mxf', '.nsv', '.nut', '.nuv', '.ogm', '.ogv', '.ogx', '.pva', '.qt', '.rec', '.rm', '.rmvb', '.roq', '.rv', '.smk', '.str', '.tp', '.trp', '.ts', '.vob', '.webm', '.wmv', '.wtv', '.xvid', '.y4m', '.yuv']);
 const startupFilePath = process.argv.slice(1).find(argument => {
@@ -33,6 +35,43 @@ let videoResumeLoad;
 let videoResumeWrite = Promise.resolve();
 let cinemaVolumeBoostEnabled = false;
 let cinemaSettingsLoad;
+
+function logStabilityEvent(kind, details = {}) {
+  try {
+    const logPath = path.join(app.getPath('userData'), 'stability.log');
+    if (fsSync.existsSync(logPath) && fsSync.statSync(logPath).size > 2 * 1024 * 1024) {
+      fsSync.writeFileSync(logPath, '', 'utf8');
+    }
+    fsSync.appendFileSync(logPath, `${JSON.stringify({
+      time: new Date().toISOString(),
+      kind,
+      appVersion: app.getVersion(),
+      electron: process.versions.electron,
+      platform: process.platform,
+      ...details
+    })}\n`, 'utf8');
+  } catch (error) {
+    console.error('Could not write MyPlayer stability log:', error);
+  }
+}
+
+process.on('uncaughtExceptionMonitor', error => {
+  logStabilityEvent('uncaught-exception', { message: error?.message || String(error), stack: error?.stack || '' });
+});
+app.on('child-process-gone', (_event, details) => {
+  logStabilityEvent('child-process-gone', {
+    type: details?.type || 'unknown',
+    reason: details?.reason || 'unknown',
+    exitCode: details?.exitCode,
+    serviceName: details?.serviceName || ''
+  });
+});
+
+// Keep native/renderer crash dumps on this device for diagnosis; never upload them.
+crashReporter.start({
+  productName: 'MyPlayer',
+  uploadToServer: false
+});
 
 async function loadCinemaSettings() {
   if (!cinemaSettingsLoad) cinemaSettingsLoad = (async () => {
@@ -101,11 +140,18 @@ function createWindow(mode) {
     maxWidth: cinema ? 1100 : 430, maxHeight: cinema ? 850 : 740, show: false, frame: false, roundedCorners: true, hasShadow: false,
     transparent: true, backgroundColor: '#00000000', resizable: true,
     title: cinema ? 'MyCinema' : 'MyMusic',
-    icon: app.isPackaged ? path.join(process.resourcesPath, iconName) : path.join(__dirname, '..', 'assets', iconName),
+    icon: app.isPackaged ? path.join(process.resourcesPath, iconName) : path.join(projectRoot, 'assets', iconName),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: false }
   });
   const window = mainWindow;
   let rendererRecoveryAttempted = false;
+  window.webContents.on('render-process-gone', (_event, details) => {
+    logStabilityEvent('renderer-gone', {
+      player: cinema ? 'cinema' : 'music',
+      reason: details.reason,
+      exitCode: details.exitCode
+    });
+  });
   if (!cinema) {
     window.webContents.on('render-process-gone', (_event, details) => {
       console.error(`MyMusic renderer exited: ${details.reason} (code ${details.exitCode})`);
@@ -123,7 +169,8 @@ function createWindow(mode) {
     }
   });
   attachMpvWindow(mainWindow);
-  mainWindow.loadFile(path.join(__dirname, 'index.html'), { query: { app: mode, ...(startupFileType === 'audio' ? { filePath: startupFilePath } : {}) } });
+  const homePage = path.join(sourceRoot, cinema ? 'MyCinema' : 'MyMusic', cinema ? 'cinema.html' : 'music.html');
+  mainWindow.loadFile(homePage, { query: { app: mode, ...(startupFileType === 'audio' ? { filePath: startupFilePath } : {}) } });
   mainWindow.once('ready-to-show', () => { positionMainWindow('normal'); mainWindow.show(); });
 }
 
@@ -161,10 +208,17 @@ function createVideoWindow(filePath, title) {
     maxWidth: area.width, maxHeight: area.height,
     x: area.x + Math.round((area.width - width) / 2), y: area.y + Math.round((area.height - height) / 2),
     frame: false, show: false, transparent: true, backgroundColor: '#00000000', hasShadow: false, resizable: true,
-    title, icon: app.isPackaged ? path.join(process.resourcesPath, 'mycinema.ico') : path.join(__dirname, '..', 'assets', 'mycinema.ico'),
+    title, icon: app.isPackaged ? path.join(process.resourcesPath, 'mycinema.ico') : path.join(projectRoot, 'assets', 'mycinema.ico'),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: false }
   });
   const window = videoWindow;
+  window.webContents.on('render-process-gone', (_event, details) => {
+    logStabilityEvent('renderer-gone', {
+      player: 'cinema-video',
+      reason: details.reason,
+      exitCode: details.exitCode
+    });
+  });
   window.setAspectRatio(16 / 9);
   attachMpvWindow(window);
   window.on('enter-full-screen', () => {
@@ -189,7 +243,7 @@ function createVideoWindow(filePath, title) {
     videoWindowRestoreMaxSize = null;
     videoWindowFullscreen = false;
   });
-  window.loadFile(path.join(__dirname, 'video-player.html'), { query: video });
+  window.loadFile(path.join(sourceRoot, 'MyCinema', 'CinemaPlayer', 'CinemaPlayer.html'), { query: video });
   return true;
 }
 
@@ -444,6 +498,7 @@ ipcMain.on('window-close', event => {
 });
 ipcMain.on('window-minimize', event => BrowserWindow.fromWebContents(event.sender)?.minimize());
 app.whenReady().then(async () => {
+  logStabilityEvent('startup', { crashDumpDirectory: app.getPath('crashDumps') });
   try { const { createMpvMain } = await import('electron-mpv-video/main'); mpvMain = createMpvMain(); } catch (error) { console.error('MPV initialization failed:', error); }
   if (startupFileType === 'video') createVideoWindow(startupFilePath, path.basename(startupFilePath));
   else createWindow(launchMode);

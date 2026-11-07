@@ -5,11 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; media-src 'self' file: blob:;">
   <title>MyCinema</title>
-  <link rel="stylesheet" href="video-player.css">
+  <link rel="stylesheet" href="CinemaPlayer.css">
 </head>
 <body>
   <main class="player" id="player">
     <mpv-video id="video" render-mode="shared-texture" volume="75"></mpv-video>
+    <div class="cinema-transition-shade" id="transitionShade" aria-hidden="true"></div>
     <div class="drag-strip" aria-hidden="true"></div>
     <nav class="track-options auto-hide" aria-label="Video tracks">
       <button class="glass track-button" id="audioTrack" title="Choose audio track" aria-label="Choose audio track"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4ZM16 9a5 5 0 0 1 0 6M18 6a9 9 0 0 1 0 12"/></svg><span>Audio</span></button>
@@ -53,7 +54,7 @@
     <div class="keyboard-status" id="keyboardStatus" role="status" aria-live="polite"></div>
     <div class="error hidden" id="error" role="status"></div>
   </main>
-  <script src="scroll-fade.js"></script>
-  <script type="module" src="video-player.js"></script>
+  <script src="../../utilities/scroll-fade.js"></script>
+  <script type="module" src="CinemaPlayer.js"></script>
 </body>
 </html>

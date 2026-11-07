@@ -1,8 +1,8 @@
 {
   "name": "myplayer",
-  "version": "1.2.20",
+  "version": "1.2.21",
   "description": "A black and white Liquid Glass desktop music and video player",
-  "main": "src/main.cjs",
+  "main": "src/utilities/main.cjs",
   "author": "MyPlayer",
   "license": "UNLICENSED",
   "scripts": {
@@ -45,6 +45,10 @@
       {
         "from": "assets/mycinema.ico",
         "to": "mycinema.ico"
+      },
+      {
+        "from": "assets/myplayer.ico",
+        "to": "myplayer.ico"
       }
     ],
     "asarUnpack": [
@@ -54,10 +58,12 @@
     "win": {
       "target": "nsis",
       "artifactName": "MyPlayer-Setup-${version}.${ext}",
-      "icon": "assets/mymusicplayer.ico"
+      "icon": "assets/myplayer.ico"
     },
     "nsis": {
       "include": "scripts/register-default-apps.nsh",
+      "installerIcon": "assets/myplayer.ico",
+      "uninstallerIcon": "assets/myplayer.ico",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,

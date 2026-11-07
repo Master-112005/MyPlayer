@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; media-src 'self' file: blob:;">
   <title>MyMusic</title>
-  <script src="mode.js"></script>
-  <link rel="stylesheet" href="styles.css">
+  <script src="../utilities/mode.js"></script>
+  <link rel="stylesheet" href="../utilities/styles.css">
 </head>
 <body>
   <main class="window-shell home-open">
@@ -115,13 +115,12 @@
       <div class="now-playing-bar" id="nowPlayingBar"><button class="now-playing-open" id="nowPlayingOpen" aria-label="Open player"><span class="now-playing-art" id="nowPlayingArt">&#9835;</span><span class="now-playing-copy"><strong id="nowPlayingTitle">Not Playing</strong><small id="nowPlayingArtist">Choose a song</small></span></button><button class="now-playing-play" id="nowPlayingPlay" aria-label="Play" title="Play"><svg class="mini-play-icon" viewBox="0 0 24 24"><path d="m8 5 12 7-12 7V5Z"/></svg><svg class="mini-pause-icon hidden" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM15 5h4v14h-4z"/></svg></button></div>
     </section>
     <dialog id="playlistDialog" class="playlist-dialog"><form id="playlistForm"><span class="queue-kicker">NEW PLAYLIST</span><h2>Create Playlist</h2><input id="playlistName" maxlength="40" placeholder="Playlist name" aria-label="Playlist name" required><div><button type="button" id="cancelPlaylist">Cancel</button><button type="submit">Create</button></div></form></dialog>
-    <dialog id="addPlaylistDialog" class="playlist-dialog"><form id="addPlaylistForm"><span class="queue-kicker">SAVE SONG</span><h2>Add to Playlist</h2><div class="playlist-choices" id="playlistChoices" aria-label="Choose one or more playlists"></div><div><button type="button" id="cancelAddPlaylist">Cancel</button><button type="submit">Add Song</button></div></form></dialog>
+    <dialog id="addPlaylistDialog" class="playlist-dialog"><form id="addPlaylistForm"><span class="queue-kicker">SONG PLAYLISTS</span><h2>Manage Playlists</h2><div class="playlist-choices" id="playlistChoices" aria-label="Choose playlists for this song"></div><div><button type="button" id="cancelAddPlaylist">Cancel</button><button type="submit">Save Changes</button></div></form></dialog>
     <dialog id="confirmationDialog" class="playlist-dialog" aria-labelledby="confirmationTitle"><form method="dialog"><span class="queue-kicker">CONFIRM ACTION</span><h2 id="confirmationTitle">Remove playlist?</h2><p id="confirmationMessage"></p><div><button value="cancel">Cancel</button><button class="confirm-remove" value="confirm">Remove</button></div></form></dialog>
     <div class="toast" id="toast" role="status"></div>
     <audio id="audio"></audio>
   </main>
-  <script src="scroll-fade.js"></script>
-  <script src="renderer.js"></script>
-  <script type="module" src="cinema.js"></script>
+  <script src="../utilities/scroll-fade.js"></script>
+  <script src="music.js"></script>
 </body>
 </html>

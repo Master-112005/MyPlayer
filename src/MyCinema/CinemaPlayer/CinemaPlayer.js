@@ -1,4 +1,4 @@
-import { defineMpvVideoElement } from '../node_modules/electron-mpv-video/dist/renderer/index.js';
+import { defineMpvVideoElement } from '../../../node_modules/electron-mpv-video/dist/renderer/index.js';
 
 defineMpvVideoElement();
 
@@ -19,6 +19,7 @@ let scrubbing = false;
 let playbackDuration = 0;
 let lastAspect = 0;
 let fullscreen = false;
+let fullscreenChanging = false;
 let playingState = null;
 let volumeLevel = Number($('volume').value) || 75;
 let volumeLimit = 100;
@@ -150,6 +151,7 @@ async function openVideo(filePath, title) {
   clearTimeout(resumeTimer);
   pendingResume = null;
   $('resumePrompt').classList.add('hidden');
+  $('player').classList.add('video-opening');
   currentFilePath = filePath;
   lastResumeSave = 0;
   $('error').classList.add('hidden');
@@ -184,7 +186,9 @@ async function openVideo(filePath, title) {
         try { await video.play(); } catch (error) { reportError(`Could not start this video: ${error.message || error}`); }
       }, 5000);
     } else await video.play();
+    $('player').classList.remove('video-opening');
   } catch (error) {
+    $('player').classList.remove('video-opening');
     clearInterval(progressTimer);
     progressTimer = null;
     reportError(`Could not play this video: ${error.message || error}`);
@@ -329,11 +333,43 @@ function setVolume(level) {
   applyVolume();
 }
 async function setFullscreen(requested) {
+  if (fullscreenChanging || requested === fullscreen) return;
+  fullscreenChanging = true;
   try {
+    await transitionFullscreenShade(true);
     const active = await window.player.setVideoFullscreen(requested);
     updateFullscreenUi(Boolean(active));
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     if (Boolean(active) !== requested) reportError('Windows did not enter fullscreen mode. Try the fullscreen button again.');
-  } catch (error) { reportError(`Fullscreen failed: ${error.message || error}`); }
+  } catch (error) {
+    reportError(`Fullscreen failed: ${error.message || error}`);
+  } finally {
+    await transitionFullscreenShade(false);
+    fullscreenChanging = false;
+  }
+}
+function transitionFullscreenShade(visible) {
+  const shade = $('transitionShade');
+  const targetOpacity = visible ? 1 : 0;
+  const currentOpacity = Number(getComputedStyle(shade).opacity);
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches || Math.abs(currentOpacity - targetOpacity) < 0.01) {
+    shade.classList.toggle('visible', visible);
+    return Promise.resolve();
+  }
+  return new Promise(resolve => {
+    let fallback;
+    const finish = event => {
+      if (event && (event.target !== shade || event.propertyName !== 'opacity')) return;
+      clearTimeout(fallback);
+      shade.removeEventListener('transitionend', finish);
+      shade.removeEventListener('transitioncancel', finish);
+      resolve();
+    };
+    shade.addEventListener('transitionend', finish);
+    shade.addEventListener('transitioncancel', finish);
+    fallback = setTimeout(finish, 1500);
+    shade.classList.toggle('visible', visible);
+  });
 }
 function updateFullscreenUi(active) {
   fullscreen = active;

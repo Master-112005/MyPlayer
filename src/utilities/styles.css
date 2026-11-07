@@ -355,7 +355,7 @@ dialog::backdrop{border-radius:27px;clip-path:inset(0 round 27px);-webkit-clip-p
 .playback-options-button{position:relative;flex:none;transition:background .18s,border-color .18s,transform .18s}.playback-options-button svg{position:absolute;inset:0;margin:auto}.playback-options-button .options-shuffle-icon,.playback-options-button .options-repeat-all-icon,.playback-options-button .options-repeat-icon{display:none}.playback-options-button.is-shuffle .options-menu-icon,.playback-options-button.is-repeat-all .options-menu-icon,.playback-options-button.is-repeat-one .options-menu-icon{display:none}.playback-options-button.is-shuffle .options-shuffle-icon,.playback-options-button.is-repeat-all .options-repeat-all-icon,.playback-options-button.is-repeat-one .options-repeat-icon{display:block}
 .mini-mode .artwork-wrap::after{display:none}
 
-.mini-mute-button{display:none}
+.mini-mute-button,.mini-playback-options-button{display:none}
 .mini-mode .window-actions{width:84px;gap:4px}
 .mini-mode .mini-mute-button{display:grid;width:25px;height:25px;flex:none;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.07)}
 .mini-mode .mini-mute-button svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}

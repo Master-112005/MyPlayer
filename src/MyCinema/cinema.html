@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; media-src 'self' file: blob:;">
+  <title>MyCinema</title>
+  <script src="../utilities/mode.js"></script>
+  <link rel="stylesheet" href="../utilities/styles.css">
+</head>
+<body>
+  <main class="window-shell home-open">
+    <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+    <div class="startup-splash" aria-label="MyCinema" role="status">
+      <div class="startup-mark startup-music-mark"><svg class="startup-note" viewBox="0 0 180 180" aria-hidden="true">
+        <defs>
+          <linearGradient id="noteGlass" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff"/><stop offset=".45" stop-color="#dce3eb" stop-opacity=".68"/><stop offset="1" stop-color="#fff" stop-opacity=".92"/></linearGradient>
+          <linearGradient id="noteShine" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff" stop-opacity=".95"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+        </defs>
+        <path d="M92 117V49c20-5 37-16 51-32v30c-13 14-30 23-51 28v43c0 16-14 29-32 32-16 3-29-5-28-18 1-14 16-26 33-29 11-2 21 3 27 14Z" fill="url(#noteGlass)" stroke="#fff" stroke-opacity=".9" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M96 54v53c0 8-2 14-6 19M97 54c14-5 27-13 38-24M44 139c5-10 15-17 26-19" fill="none" stroke="url(#noteShine)" stroke-width="4.2" stroke-linecap="round"/>
+        </svg><span class="startup-reflection"></span></div>
+      <div class="startup-mark startup-cinema-mark">
+        <svg class="startup-clapperboard" viewBox="0 0 180 180" aria-hidden="true">
+          <defs>
+            <linearGradient id="clapperGlass" x1="0" y1="0" x2="1" y2="1">
+              <stop stop-color="#fff" stop-opacity=".9"/><stop offset=".5" stop-color="#dce3eb" stop-opacity=".48"/><stop offset="1" stop-color="#fff" stop-opacity=".82"/>
+            </linearGradient>
+            <clipPath id="clapperLidClip"><path d="M29 59Q28 55 33 54L144 30Q148 29 150 34L156 55Q157 59 153 60L41 84Q37 85 35 81Z"/></clipPath>
+            <clipPath id="clapperBarClip"><rect x="35" y="72" width="113" height="22" rx="5"/></clipPath>
+          </defs>
+          <rect x="29" y="67" width="123" height="81" rx="17" fill="url(#clapperGlass)" fill-opacity=".34" stroke="#fff" stroke-opacity=".9" stroke-width="6"/>
+          <rect x="35" y="72" width="113" height="22" rx="5" fill="url(#clapperGlass)" fill-opacity=".72"/>
+          <g clip-path="url(#clapperBarClip)">
+            <path d="m39 69 13-3 24 31-13 3zm34-7 13-3 24 31-13 3zm34-7 13-3 24 31-13 3z" fill="#fff" fill-opacity=".72"/>
+            <path d="m57 67 8-2 24 31-8 2zm34-7 8-2 24 31-8 2zm34-7 8-2 24 31-8 2z" fill="#111" fill-opacity=".48"/>
+          </g>
+          <g class="cinema-clapper-top">
+            <path d="M29 59Q28 55 33 54L144 30Q148 29 150 34L156 55Q157 59 153 60L41 84Q37 85 35 81Z" fill="url(#clapperGlass)" fill-opacity=".94" stroke="#fff" stroke-opacity=".96" stroke-width="3"/>
+            <g clip-path="url(#clapperLidClip)">
+              <path d="m39 57 15-3 24 31-15 3zm34-7 15-3 24 31-15 3zm34-7 15-3 24 31-15 3z" fill="#fff" fill-opacity=".75"/>
+              <path d="m57 53 8-2 24 31-8 2zm34-7 8-2 24 31-8 2zm34-7 8-2 24 31-8 2z" fill="#111" fill-opacity=".48"/>
+            </g>
+            <path d="m38 79 114-24" fill="none" stroke="#fff" stroke-opacity=".72" stroke-width="2"/>
+          </g>
+          <circle cx="42" cy="79" r="11" fill="url(#clapperGlass)" stroke="#fff" stroke-opacity=".96" stroke-width="3"/>
+          <circle cx="42" cy="79" r="6.5" fill="#fff" fill-opacity=".22"/>
+          <path d="m75 99 33 19-33 19z" fill="#fff" fill-opacity=".86" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/>
+        </svg>
+        <span class="startup-reflection"></span>
+      </div>
+      <div class="startup-name"><span class="startup-music-name">MyMusic</span><span class="startup-cinema-name">MyCinema</span></div>
+    </div>
+    <section class="cinema-view hidden" id="cinemaView" aria-label="MyCinema">
+      <div class="cinema-notes" id="cinemaNotes" aria-hidden="true"></div>
+      <header class="cinema-topbar"><div class="cinema-head-left"><div class="cinema-brand"><span class="queue-kicker">MY CINEMA</span><strong>MyCinema</strong></div></div><label class="cinema-search"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.5 15.5 4.2 4.2"/></svg><input id="cinemaSearch" type="search" placeholder="Search videos" aria-label="Search videos"></label><div class="cinema-window-actions"><button class="icon-button" id="cinemaSettings" title="Settings" aria-label="Settings" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0 1.065-2.572c-1.756-.426-1.756-2.924 0-3.35A1.724 1.724 0 0 0 5.382 7.78c-.94-1.543.826-3.31 2.37-2.37.996.608 2.27.078 2.573-1.066z"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg></button><button class="icon-button" id="cinemaMinimize" title="Minimize" aria-label="Minimize"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button><button class="icon-button close-action" id="cinemaClose" title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></svg></button></div></header>
+      <div class="cinema-settings hidden" id="cinemaSettingsPanel" aria-label="Cinema settings"><details class="cinema-folder-group"><summary class="cinema-settings-row"><span class="settings-icon"><svg viewBox="0 0 24 24"><path d="M3.5 7.5h7l2 2h8v8.8a1.7 1.7 0 0 1-1.7 1.7H5.2a1.7 1.7 0 0 1-1.7-1.7V7.5Z"/><path d="M3.5 7.5V5.8A1.8 1.8 0 0 1 5.3 4h4.2l2 2h7.3a1.7 1.7 0 0 1 1.7 1.5"/></svg></span><span><strong>Video folders</strong><small>Add or manage library folders</small></span><span class="settings-chevron"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></span></summary><button class="settings-action cinema-folder-add-action" id="videoFolderButton" type="button">Add folder</button><div class="cinema-folder-options"><div class="video-folder-list" id="videoFolderList" hidden></div></div></details><div class="cinema-settings-row"><span class="settings-icon"><svg viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M5.6 9a7 7 0 0 1 12-2L20 12M4 12l2.4 5a7 7 0 0 0 12-2"/></svg></span><span><strong>Refresh library</strong><small>Rescan added folders</small></span><button class="settings-action" id="refreshVideoLibrary">Refresh</button></div><div class="cinema-settings-row cinema-volume-setting"><span class="settings-icon"><svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 4V5L7 9H3Zm13-1a6 6 0 0 1 0 8m2-11a10 10 0 0 1 0 14"/></svg></span><span><strong>Allow volume above 100%</strong><small>Enable volume boost up to 200%</small></span><label class="settings-switch"><input id="cinemaVolumeBoostToggle" type="checkbox" role="switch" aria-label="Allow volume above 100 percent"><span></span></label></div><div class="cinema-settings-row"><span class="settings-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 9h16M8 5l2 4m3-4 2 4m3-4 2 4"/></svg></span><span><strong>Default video app</strong><small>Change which app opens videos</small></span><button class="settings-action" id="defaultVideoButton">Choose</button></div></div>
+      <div class="cinema-library" id="cinemaLibrary"><div class="video-grid" id="videoGrid"></div><div class="cinema-empty" id="cinemaEmpty"><span>▣</span><strong>MyCinema is ready</strong><small>Add a video folder in Settings to build your library.</small></div></div>
+      <div class="cinema-player hidden" id="cinemaPlayer"><button class="cinema-back" id="cinemaBack">‹ &nbsp; All videos</button><div class="video-frame" id="videoFrame"><div class="video-frame-fallback hidden" id="videoFallback"><strong>Video engine unavailable</strong><span>MyCinema could not start the MPV playback engine.</span></div></div><div class="video-title-row"><div><span class="queue-kicker">NOW PLAYING</span><h2 id="videoTitle">Choose a video</h2></div><span id="videoTimeLabel">0:00 / 0:00</span></div><input class="video-seek" id="videoSeek" type="range" min="0" max="1000" value="0" aria-label="Seek video"><div class="video-controls"><button class="video-icon-control" id="previousVideo" title="Previous video" aria-label="Previous video">|‹</button><button class="video-play-control" id="toggleVideo" title="Play or pause" aria-label="Play or pause">▶</button><button class="video-icon-control" id="nextVideo" title="Next video" aria-label="Next video">›|</button><label>VOLUME <input id="videoVolume" type="range" min="0" max="100" value="75" aria-label="Volume"></label><button class="video-fullscreen" id="videoFullscreen" title="Fullscreen" aria-label="Fullscreen">⛶</button></div></div>
+      <div class="cinema-status" id="cinemaStatus" role="status" aria-live="polite"></div>
+    </section>
+    <dialog class="cinema-volume-warning" id="cinemaVolumeWarning" aria-labelledby="cinemaVolumeWarningTitle" aria-describedby="cinemaVolumeWarningText"><form method="dialog"><svg class="cinema-warning-icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 5 45 42H3L24 5Z" fill="rgba(255,196,61,.18)" stroke="#ffc43d" stroke-width="2.5" stroke-linejoin="round"/><path d="M24 17v12" stroke="#ffd166" stroke-width="3.5" stroke-linecap="round"/><circle cx="24" cy="35" r="1.8" fill="#ffd166"/></svg><span class="queue-kicker">VOLUME BOOST</span><h2 id="cinemaVolumeWarningTitle">Enable volume up to 200%?</h2><p id="cinemaVolumeWarningText">Volume above 100% can cause distortion and may damage your laptop speakers or connected audio equipment. Use it carefully and keep the volume low when testing.</p><div class="cinema-warning-actions"><button value="cancel">Cancel</button><button class="cinema-warning-enable" value="enable">Enable 200%</button></div></form></dialog>
+  </main>
+  <script src="../utilities/scroll-fade.js"></script>
+  <script type="module" src="cinema.js"></script>
+</body>
+</html>

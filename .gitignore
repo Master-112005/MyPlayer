@@ -3,3 +3,6 @@ dist/
 player-preview.png
 .DS_Store
 npm-debug.log*
+AGENTS.md
+.codex/
+graphify-out/

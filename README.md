@@ -17,3 +17,9 @@ MyCinemaPlayer uses libmpv with FFmpeg for broad video and audio codec support, 
 Run `npm run dist`. The command builds the native MPV addon first, then writes the single installer under `dist/` for both apps.
 
 The bundled MPV/FFmpeg build has separate third-party licensing terms; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Source layout
+
+- `src/MyMusic/` contains `music.html` and `music.js` for the MyMusic home page and library/player logic.
+- `src/MyCinema/` contains `cinema.html` and the MyCinema library; `src/MyCinema/CinemaPlayer/` contains the separate `CinemaPlayer.html`, `.js`, and `.css` window and controls.
+- `src/utilities/` contains the shared Electron main process and preload, shared home styling, startup mode selection, and scroll-fade behavior.
