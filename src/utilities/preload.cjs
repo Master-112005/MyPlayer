@@ -5,6 +5,11 @@ require('electron-mpv-video/preload').exposeMpvApi();
 contextBridge.exposeInMainWorld('player', {
   chooseFolder: () => ipcRenderer.invoke('choose-folder'),
   scanFolder: folder => ipcRenderer.invoke('scan-folder', folder),
+  onMusicFolderChanged: callback => {
+    const listener = () => callback();
+    ipcRenderer.on('music-folder-changed', listener);
+    return () => ipcRenderer.removeListener('music-folder-changed', listener);
+  },
   getTrackInfo: filePath => ipcRenderer.invoke('track-info', filePath),
   getTrackSearchInfo: filePath => ipcRenderer.invoke('track-search-info', filePath),
   chooseVideoFolder: () => ipcRenderer.invoke('choose-video-folder'),

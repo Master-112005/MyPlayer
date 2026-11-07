@@ -34,6 +34,8 @@ let coloredMiniEdges = localStorage.getItem('coloredMiniEdges') !== 'false';
 let artworkEdgeRgb = '255,255,255';
 let toastTimer;
 let trackRequest = 0;
+let audioErrorRequest = -1;
+let libraryChangeTimer;
 let miniMode = false;
 let miniResizePending = false;
 let miniModeSyncPending = true;
@@ -719,9 +721,7 @@ async function selectFolder() {
     if (!result) return;
     folder = result.folder;
     localStorage.setItem('musicFolder', folder);
-    tracks = result.tracks;
-    restoreTrackAddedDates();
-    restoreTrackOrder();
+    reconcileLibraryScan(result.tracks, null);
     ui.searchInput.value = '';
     currentIndex = -1;
     playbackPaths = null;
@@ -789,7 +789,7 @@ async function playTrack(index, autoplay = true) {
   } catch {
     track.title = track.filename.replace(/\.[^.]+$/, ''); track.artist = 'Unknown artist';
   }
-  if (!(await playback) && request === trackRequest) { setPlaying(false); showToast('This audio format could not be played by Windows'); }
+  if (!(await playback) && request === trackRequest) void handleTrackPlaybackError(track, request);
 }
 function savePlaybackPosition(force = false) {
   const track = tracks[currentIndex];
@@ -799,18 +799,90 @@ function savePlaybackPosition(force = false) {
   lastPositionSavedAt = now;
   localStorage.setItem('lastPlayedPosition', JSON.stringify({ path: track.path, time: audio.currentTime }));
 }
+function reconcileLibraryScan(found, previousTrackPath = tracks[currentIndex]?.path) {
+  const available = new Set(found.map(track => track.path.toLocaleLowerCase()));
+  const root = folder.replace(/[\\/]+$/, '').toLocaleLowerCase();
+  const belongsToFolder = filePath => {
+    const candidate = filePath.toLocaleLowerCase();
+    return candidate === root || candidate.startsWith(`${root}\\`) || candidate.startsWith(`${root}/`);
+  };
+  const keepReference = filePath => !belongsToFolder(filePath) || available.has(filePath.toLocaleLowerCase());
+  const lastPlayedPath = localStorage.getItem('lastPlayedTrack');
+  if (lastPlayedPath && belongsToFolder(lastPlayedPath) && !available.has(lastPlayedPath.toLocaleLowerCase())) {
+    localStorage.removeItem('lastPlayedTrack');
+    try {
+      const savedPosition = JSON.parse(localStorage.getItem('lastPlayedPosition') || 'null');
+      if (savedPosition?.path?.toLocaleLowerCase() === lastPlayedPath.toLocaleLowerCase()) localStorage.removeItem('lastPlayedPosition');
+    } catch { localStorage.removeItem('lastPlayedPosition'); }
+  }
+  let playlistsChanged = false;
+  for (const playlist of playlists) {
+    const keptTracks = playlist.tracks.filter(keepReference);
+    if (keptTracks.length !== playlist.tracks.length) { playlist.tracks = keptTracks; playlistsChanged = true; }
+  }
+  const keptFavorites = [...favorites].filter(keepReference);
+  const favoritesChanged = keptFavorites.length !== favorites.size;
+  favorites = new Set(keptFavorites);
+  if (playlistsChanged) savePlaylists();
+  if (favoritesChanged) localStorage.setItem('favorites', JSON.stringify(keptFavorites));
+
+  const addedKey = `music-added:${folder}`;
+  try {
+    const added = JSON.parse(localStorage.getItem(addedKey) || '{}');
+    for (const savedPath of Object.keys(added)) if (!available.has(savedPath.toLocaleLowerCase())) delete added[savedPath];
+    localStorage.setItem(addedKey, JSON.stringify(added));
+  } catch {}
+
+  tracks = found;
+  restoreTrackAddedDates();
+  restoreTrackOrder();
+  const previousKey = previousTrackPath?.toLocaleLowerCase();
+  currentIndex = previousKey ? tracks.findIndex(track => track.path.toLocaleLowerCase() === previousKey) : -1;
+  if (playbackPaths) playbackPaths = playbackPaths.filter(keepReference);
+  const currentWasRemoved = Boolean(previousKey && currentIndex < 0);
+  if (currentWasRemoved) {
+    ++trackRequest;
+    currentIndex = -1;
+    audio.pause(); audio.removeAttribute('src'); audio.load();
+    pendingResume = null;
+    if (localStorage.getItem('lastPlayedTrack')?.toLocaleLowerCase() === previousKey) {
+      localStorage.removeItem('lastPlayedTrack');
+      try {
+        const savedPosition = JSON.parse(localStorage.getItem('lastPlayedPosition') || 'null');
+        if (savedPosition?.path?.toLocaleLowerCase() === previousKey) localStorage.removeItem('lastPlayedPosition');
+      } catch { localStorage.removeItem('lastPlayedPosition'); }
+    }
+    ui.trackTitle.textContent = tracks.length ? 'Track unavailable' : 'No music found';
+    ui.trackArtist.textContent = tracks.length ? 'Removed from your music folder' : 'Your folder may have moved';
+    ui.currentTime.textContent = '0:00'; ui.duration.textContent = '0:00'; setSeekValue(0);
+    setPlaying(false); resetArtwork();
+  }
+  setTrackCount(); renderQueue(); renderPlaylists(); updateFavorite(); updatePlaybackHeader(); updateNowPlaying();
+  return currentWasRemoved;
+}
+
+async function handleTrackPlaybackError(track, request) {
+  if (!folder || request !== trackRequest || audioErrorRequest === request) return;
+  audioErrorRequest = request;
+  setPlaying(false);
+  try {
+    const found = await window.player.scanFolder(folder);
+    if (request !== trackRequest) return;
+    const stillAvailable = found.some(item => item.path.toLocaleLowerCase() === track.path.toLocaleLowerCase());
+    const removed = reconcileLibraryScan(found, track.path);
+    showToast(removed || !stillAvailable ? 'Song removed from your music folder' : 'This audio format could not be played by Windows');
+  } catch {
+    showToast('Could not check the music folder');
+  }
+}
+
 async function rescan() {
   if (!folder) { await selectFolder(); return; }
   try {
     const oldTrack = tracks[currentIndex]?.path;
-    tracks = await window.player.scanFolder(folder);
-    restoreTrackAddedDates();
-    restoreTrackOrder();
-    currentIndex = tracks.findIndex(track => track.path === oldTrack);
-    setTrackCount(); renderQueue(); renderPlaylists();
-    if (currentIndex < 0 && tracks.length) await playTrack(0);
-    else if (!tracks.length) { audio.pause(); currentIndex = -1; ui.trackTitle.textContent = 'No music found'; ui.trackArtist.textContent = 'Your folder may have moved'; setPlaying(false); }
-    showToast(`${tracks.length} songs in your library`);
+    const found = await window.player.scanFolder(folder);
+    const removedCurrent = reconcileLibraryScan(found, oldTrack);
+    showToast(removedCurrent ? 'Current song was removed from your music folder' : `${tracks.length} songs in your library`);
   } catch { showToast('Could not rescan that folder'); }
 }
 function moveTrack(direction) {
@@ -842,6 +914,10 @@ function handleTrackEnded() {
 }
 ui.settingsFolderButton.addEventListener('click', selectFolder);
 ui.settingsRescanButton.addEventListener('click', rescan);
+window.player.onMusicFolderChanged(() => {
+  clearTimeout(libraryChangeTimer);
+  libraryChangeTimer = setTimeout(() => { void rescan(); }, 450);
+});
 ui.defaultAudioButton.addEventListener('click', async () => {
   if (!await window.player.openDefaultApps('audio')) showToast('Install MyPlayer to register MyMusic with Windows.');
 });
@@ -1233,7 +1309,11 @@ audio.addEventListener('loadedmetadata', () => {
   savePlaybackPosition(true);
 });
 audio.addEventListener('ended', handleTrackEnded);
-audio.addEventListener('error', () => { if (audio.src) { setPlaying(false); showToast('This audio format could not be played by Windows'); } });
+audio.addEventListener('error', () => {
+  const failedTrack = tracks[currentIndex];
+  if (audio.src && failedTrack) void handleTrackPlaybackError(failedTrack, trackRequest);
+  else setPlaying(false);
+});
 window.addEventListener('pagehide', () => savePlaybackPosition(true));
 const startupAudioPath = new URLSearchParams(location.search).get('filePath');
 if (startupAudioPath) {
@@ -1242,14 +1322,14 @@ if (startupAudioPath) {
   folder = startupFolder;
   localStorage.setItem('musicFolder', folder);
   window.player.scanFolder(startupFolder).then(found => {
-    tracks = found; restoreTrackAddedDates(); restoreTrackOrder(); setTrackCount(); renderQueue(); renderPlaylists();
+    reconcileLibraryScan(found, null);
     const index = tracks.findIndex(track => track.path.toLocaleLowerCase() === startupAudioPath.toLocaleLowerCase());
     if (index >= 0) { playbackSource = { type: 'all' }; playbackPaths = null; void playTrack(index); }
     else showToast('Could not find that audio file in its folder');
   }).catch(() => showToast('Could not open that audio file'));
 } else if (folder) {
   window.player.scanFolder(folder).then(found => {
-    tracks = found; restoreTrackAddedDates(); restoreTrackOrder(); setTrackCount(); renderQueue(); renderPlaylists();
+    reconcileLibraryScan(found, null);
     if (!tracks.length) { ui.trackTitle.textContent = 'No music found'; ui.trackArtist.textContent = 'Choose a folder to get started'; }
     else {
       const lastPath = localStorage.getItem('lastPlayedTrack');

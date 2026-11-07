@@ -34,6 +34,9 @@ if (launchMode === 'cinema') {
 
 let mainWindow;
 let mainWindowMiniMode = false;
+let musicFolderWatcher;
+let musicFolderWatchPath = '';
+let musicFolderWatchTimer;
 let mpvMain;
 let videoWindow;
 let videoWindowRestoreBounds;
@@ -266,8 +269,7 @@ async function scanFolder(folder) {
   const pending = [folder];
   while (pending.length) {
     const current = pending.pop();
-    let entries;
-    try { entries = await fs.readdir(current, { withFileTypes: true }); } catch { continue; }
+    const entries = await fs.readdir(current, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path.join(current, entry.name);
       if (entry.isDirectory() && !entry.name.startsWith('.')) pending.push(fullPath);
@@ -279,15 +281,52 @@ async function scanFolder(folder) {
   return tracks.sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' }));
 }
 
+function watchMusicFolder(folder) {
+  const resolved = path.resolve(folder);
+  if (musicFolderWatcher && musicFolderWatchPath === resolved) return;
+  musicFolderWatcher?.close();
+  clearTimeout(musicFolderWatchTimer);
+  musicFolderWatchPath = resolved;
+  try {
+    const watcher = fsSync.watch(resolved, { recursive: true }, () => {
+      clearTimeout(musicFolderWatchTimer);
+      musicFolderWatchTimer = setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('music-folder-changed');
+      }, 350);
+    });
+    musicFolderWatcher = watcher;
+    watcher.on('error', error => {
+      console.warn('MyMusic folder watcher stopped:', error.message);
+      watcher.close();
+      if (musicFolderWatcher === watcher) {
+        musicFolderWatcher = null;
+        musicFolderWatchPath = '';
+      }
+      clearTimeout(musicFolderWatchTimer);
+      musicFolderWatchTimer = setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('music-folder-changed');
+      }, 350);
+    });
+  } catch (error) {
+    musicFolderWatcher = null;
+    musicFolderWatchPath = '';
+    console.warn('Could not watch MyMusic folder:', error.message);
+  }
+}
+
 ipcMain.handle('choose-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, { title: 'Choose your music folder', properties: ['openDirectory'] });
   if (result.canceled || !result.filePaths[0]) return null;
   const folder = result.filePaths[0];
-  return { folder, tracks: await scanFolder(folder) };
+  const tracks = await scanFolder(folder);
+  watchMusicFolder(folder);
+  return { folder, tracks };
 });
 ipcMain.handle('scan-folder', async (_event, folder) => {
   if (typeof folder !== 'string') return [];
-  return scanFolder(folder);
+  const tracks = await scanFolder(folder);
+  watchMusicFolder(folder);
+  return tracks;
 });
 ipcMain.handle('track-search-info', async (_event, filePath) => {
   if (typeof filePath !== 'string') return null;
@@ -517,6 +556,10 @@ app.whenReady().then(async () => {
   if (startupFileType === 'video') createVideoWindow(startupFilePath, path.basename(startupFilePath));
   else createWindow(launchMode);
 });
-app.on('before-quit', () => { void mpvMain?.dispose().catch(error => console.error('MPV shutdown failed:', error)); });
+app.on('before-quit', () => {
+  musicFolderWatcher?.close();
+  clearTimeout(musicFolderWatchTimer);
+  void mpvMain?.dispose().catch(error => console.error('MPV shutdown failed:', error));
+});
 app.on('window-all-closed', () => app.quit());
 
