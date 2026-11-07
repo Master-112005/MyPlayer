@@ -38,6 +38,8 @@ let miniMode = false;
 let miniResizePending = false;
 let miniModeSyncPending = true;
 let homeView = 'home';
+let searchReturnView = 'home';
+let searchReturnPlaylistId = null;
 let selectedPlaylistId = null;
 let playerReturnView = 'home';
 let playerReturnPlaylistId = null;
@@ -369,7 +371,7 @@ function showHome(view = 'home', playlistId = null, returnToPlayer = false) {
   ui.homeLibrary.classList.toggle('hidden', !['all', 'playlist', 'favorites', 'search'].includes(view));
   ui.settingsView.classList.toggle('hidden', view !== 'settings');
   ui.homeHomeButton.classList.toggle('hidden', view === 'home');
-  const canGoBack = ['playlist', 'favorites', 'all'].includes(view);
+  const canGoBack = ['playlist', 'favorites', 'all', 'search'].includes(view);
   ui.playlistBackButton.classList.toggle('hidden', !canGoBack);
   ui.playlistBackButton.title = queueReturnToPlayer ? 'Back to player' : 'Back to home';
   ui.playlistBackButton.setAttribute('aria-label', queueReturnToPlayer ? 'Back to player' : 'Back to home');
@@ -406,11 +408,13 @@ function openSearch() {
   if (homeView === 'search' && ui.queuePanel.classList.contains('search-open')) {
     void indexSearchMetadata(); ui.searchInput.focus(); return;
   }
+  searchReturnView = homeView;
+  searchReturnPlaylistId = selectedPlaylistId;
   showHome('search');
   ui.homeSearch.classList.remove('hidden'); ui.queuePanel.classList.add('search-open');
   void indexSearchMetadata(); requestAnimationFrame(() => ui.searchInput.focus());
 }
-function addTrackToPlaylist(path) {
+function addTrackToPlaylist(path, promoteAdded = false) {
   if (!playlists.length) { showToast('Create a playlist first'); return; }
   trackToAdd = path;
   selectedPlaylistIds = new Set(playlists.filter(playlist => playlist.tracks.includes(path)).map(playlist => playlist.id));
@@ -885,6 +889,7 @@ ui.addPlaylistForm.addEventListener('submit', event => {
   event.preventDefault();
   if (!trackToAdd) { ui.addPlaylistDialog.close(); return; }
   const added = [];
+  const addedIds = [];
   const removed = [];
   for (const playlist of playlists) {
     const containsTrack = playlist.tracks.includes(trackToAdd);
@@ -892,6 +897,7 @@ ui.addPlaylistForm.addEventListener('submit', event => {
     if (shouldContainTrack && !containsTrack) {
       playlist.tracks.push(trackToAdd);
       added.push(playlist.name);
+      addedIds.push(playlist.id);
     } else if (!shouldContainTrack && containsTrack) {
       playlist.tracks = playlist.tracks.filter(path => path !== trackToAdd);
       removed.push(playlist.name);
@@ -901,6 +907,10 @@ ui.addPlaylistForm.addEventListener('submit', event => {
     }
   }
   if (added.length || removed.length) {
+    if (promoteAdded && addedIds.length) {
+      const addedSet = new Set(addedIds);
+      playlists = [...playlists.filter(playlist => addedSet.has(playlist.id)), ...playlists.filter(playlist => !addedSet.has(playlist.id))];
+    }
     savePlaylists(); updatePlaybackHeader(); renderPlaylists(); renderQueue();
   }
   ui.addPlaylistDialog.close();
@@ -1141,7 +1151,8 @@ ui.queueButton.addEventListener('click', () => {
   else showHome(playbackSource?.type === 'favorites' ? 'favorites' : 'all', null, true);
 });
 ui.playlistBackButton.addEventListener('click', () => {
-  if (queueReturnToPlayer) showPlayer();
+  if (homeView === 'search') showHome(searchReturnView, searchReturnPlaylistId);
+  else if (queueReturnToPlayer) showPlayer();
   else showHome();
 });
 ui.favoriteButton.addEventListener('click', toggleFavorite);
@@ -1149,7 +1160,7 @@ ui.miniFavoriteButton.addEventListener('click', toggleFavorite);
 ui.playerAddPlaylistButton.addEventListener('click', () => {
   const path = tracks[currentIndex]?.path;
   if (!path) return showToast('Play a song before adding it to a playlist');
-  addTrackToPlaylist(path);
+  addTrackToPlaylist(path, true);
 });
 let seekPointerActive = false;
 function seekFromPointer(event) {

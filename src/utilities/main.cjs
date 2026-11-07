@@ -14,6 +14,17 @@ const startupFilePath = process.argv.slice(1).find(argument => {
 }) || null;
 const startupFileType = startupFilePath && (videoExtensions.has(path.extname(startupFilePath).toLowerCase()) ? 'video' : 'audio');
 const launchMode = startupFileType ? (startupFileType === 'video' ? 'cinema' : 'music') : process.argv.includes('--player=cinema') ? 'cinema' : 'music';
+const windowIconPath = mode => app.isPackaged
+  ? path.join(process.resourcesPath, mode === 'cinema' ? 'mycinema.ico' : 'mymusicplayer.ico')
+  : path.join(projectRoot, 'assets', mode === 'cinema' ? 'mycinema.ico' : 'mymusicplayer.ico');
+
+function setWindowTaskbarIdentity(window, mode) {
+  if (process.platform !== 'win32') return;
+  window.setAppDetails({
+    appId: `com.myplayer.${mode}`,
+    appIconPath: windowIconPath(mode)
+  });
+}
 
 if (launchMode === 'cinema') {
   const sessionDataPath = path.join(app.getPath('userData'), 'MyCinemaSession');
@@ -134,15 +145,17 @@ function attachMpvWindow(window) {
 function createWindow(mode) {
   const cinema = mode === 'cinema';
   mainWindowMiniMode = false;
-  const iconName = cinema ? 'mycinema.ico' : 'mymusicplayer.ico';
+  const windowIcon = windowIconPath(mode);
   mainWindow = new BrowserWindow({
     width: cinema ? 700 : 350, height: 600, minWidth: cinema ? 620 : 320, minHeight: cinema ? 500 : 550,
     maxWidth: cinema ? 1100 : 430, maxHeight: cinema ? 850 : 740, show: false, frame: false, roundedCorners: true, hasShadow: false,
     transparent: true, backgroundColor: '#00000000', resizable: true,
     title: cinema ? 'MyCinema' : 'MyMusic',
-    icon: app.isPackaged ? path.join(process.resourcesPath, iconName) : path.join(projectRoot, 'assets', iconName),
+    icon: windowIcon,
+    appId: `com.myplayer.${mode}`,
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: false }
   });
+  setWindowTaskbarIdentity(mainWindow, mode);
   const window = mainWindow;
   let rendererRecoveryAttempted = false;
   window.webContents.on('render-process-gone', (_event, details) => {
@@ -208,9 +221,10 @@ function createVideoWindow(filePath, title) {
     maxWidth: area.width, maxHeight: area.height,
     x: area.x + Math.round((area.width - width) / 2), y: area.y + Math.round((area.height - height) / 2),
     frame: false, show: false, transparent: true, backgroundColor: '#00000000', hasShadow: false, resizable: true,
-    title, icon: app.isPackaged ? path.join(process.resourcesPath, 'mycinema.ico') : path.join(projectRoot, 'assets', 'mycinema.ico'),
+    title, icon: windowIconPath('cinema'), appId: 'com.myplayer.cinema',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: false }
   });
+  setWindowTaskbarIdentity(videoWindow, 'cinema');
   const window = videoWindow;
   window.webContents.on('render-process-gone', (_event, details) => {
     logStabilityEvent('renderer-gone', {
