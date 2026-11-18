@@ -26,6 +26,7 @@ let volumeLimit = 100;
 let volumeSettingsReady;
 let previousVolumeLevel = volumeLevel;
 let muted = false;
+let tapToToggleEnabled = false;
 let currentFilePath = null;
 let pendingResume = null;
 let resumeTimer;
@@ -155,7 +156,10 @@ async function openVideo(filePath, title) {
   currentFilePath = filePath;
   lastResumeSave = 0;
   $('error').classList.add('hidden');
-  document.title = title || 'MyCinema';
+  const displayTitle = title || filePath.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '') || 'MyCinema';
+  document.title = displayTitle;
+  $('videoTitle').textContent = displayTitle;
+  $('videoTitle').title = displayTitle;
   $('timeline').value = '0';
   $('currentTime').textContent = '0:00';
   $('remainingTime').textContent = '-0:00';
@@ -166,6 +170,7 @@ async function openVideo(filePath, title) {
   try {
     await applySubtitleSettings();
     await video.open(filePath);
+    showControls();
     const [saved, playback] = await Promise.all([
       window.player.getVideoResume(filePath),
       video.getPlaybackInfo()
@@ -411,6 +416,13 @@ video.addEventListener('mpv-state', event => {
 video.addEventListener('mpv-error', event => reportError(`Video playback error: ${event.detail}`));
 window.player.onVideoOpen(item => openVideo(item.filePath, item.title));
 $('toggle').addEventListener('click', togglePlay);
+$('player').addEventListener('click', event => {
+  if (!tapToToggleEnabled || !event.composedPath().includes(video)) return;
+  showControls();
+  void togglePlay();
+}, true);
+window.player.getCinemaTapToggle().then(enabled => { tapToToggleEnabled = Boolean(enabled); }).catch(() => { tapToToggleEnabled = false; });
+window.player.onCinemaTapToggleChanged(enabled => { tapToToggleEnabled = Boolean(enabled); });
 $('back').addEventListener('click', () => seekBy(-10));
 $('forward').addEventListener('click', () => seekBy(10));
 $('audioTrack').addEventListener('click', event => showTrackMenu('audio', event.currentTarget));

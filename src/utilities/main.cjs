@@ -48,6 +48,8 @@ let videoResumeEntries;
 let videoResumeLoad;
 let videoResumeWrite = Promise.resolve();
 let cinemaVolumeBoostEnabled = false;
+let cinemaTapToggleEnabled = false;
+let cinemaSettings = {};
 let cinemaSettingsLoad;
 
 function logStabilityEvent(kind, details = {}) {
@@ -90,11 +92,25 @@ crashReporter.start({
 async function loadCinemaSettings() {
   if (!cinemaSettingsLoad) cinemaSettingsLoad = (async () => {
     try {
-      const settings = JSON.parse(await fs.readFile(path.join(app.getPath('userData'), 'mycinema-settings.json'), 'utf8'));
-      cinemaVolumeBoostEnabled = settings.allowVolumeBoost === true;
-    } catch { cinemaVolumeBoostEnabled = false; }
+      cinemaSettings = JSON.parse(await fs.readFile(path.join(app.getPath('userData'), 'mycinema-settings.json'), 'utf8')) || {};
+      cinemaVolumeBoostEnabled = cinemaSettings.allowVolumeBoost === true;
+      cinemaTapToggleEnabled = cinemaSettings.tapToToggle === true;
+    } catch { cinemaSettings = {}; cinemaVolumeBoostEnabled = false; cinemaTapToggleEnabled = false; }
   })();
   await cinemaSettingsLoad;
+}
+
+async function saveCinemaSettings(patch) {
+  await loadCinemaSettings();
+  const updated = { ...cinemaSettings, ...patch };
+  try {
+    await fs.writeFile(path.join(app.getPath('userData'), 'mycinema-settings.json'), JSON.stringify(updated), 'utf8');
+    cinemaSettings = updated;
+    return true;
+  } catch (error) {
+    console.error('Could not save MyCinema settings:', error);
+    return false;
+  }
 }
 
 function validVideoPath(filePath) {
@@ -328,7 +344,7 @@ ipcMain.handle('scan-folder', async (_event, folder) => {
   watchMusicFolder(folder);
   return tracks;
 });
-ipcMain.handle('track-search-info', async (_event, filePath) => {
+ipcMain.handle('track-search-info', async (_event, filePath, includeLyrics = true) => {
   if (typeof filePath !== 'string') return null;
   try {
     const { parseFile } = await import('music-metadata');
@@ -336,7 +352,8 @@ ipcMain.handle('track-search-info', async (_event, filePath) => {
     return {
       title: common.title || '', artist: common.artist || common.albumartist || '', album: common.album || '',
       genre: Array.isArray(common.genre) ? common.genre.join(' ') : '', composer: Array.isArray(common.composer) ? common.composer.join(' ') : common.composer || '',
-      year: common.year || '', lyrics: Array.isArray(common.lyrics) ? common.lyrics.map(item => typeof item === 'string' ? item : item?.text || '').join(' ') : ''
+      year: common.year || '',
+      lyrics: includeLyrics === false ? '' : Array.isArray(common.lyrics) ? common.lyrics.map(item => typeof item === 'string' ? item : item?.text || '').join(' ') : ''
     };
   } catch { return null; }
 });
@@ -394,15 +411,21 @@ ipcMain.handle('cinema-volume-boost-get', async event => {
 });
 ipcMain.handle('cinema-volume-boost-set', async (event, enabled) => {
   if (!mainWindow || event.sender !== mainWindow.webContents || typeof enabled !== 'boolean') return false;
-  await loadCinemaSettings();
-  try {
-    await fs.writeFile(path.join(app.getPath('userData'), 'mycinema-settings.json'), JSON.stringify({ allowVolumeBoost: enabled }), 'utf8');
-  } catch (error) {
-    console.error('Could not save MyCinema volume settings:', error);
-    return false;
-  }
+  if (!await saveCinemaSettings({ allowVolumeBoost: enabled })) return false;
   cinemaVolumeBoostEnabled = enabled;
   if (videoWindow && !videoWindow.isDestroyed()) videoWindow.webContents.send('cinema-volume-boost-changed', enabled);
+  return true;
+});
+ipcMain.handle('cinema-tap-toggle-get', async event => {
+  if (event.sender !== mainWindow?.webContents && event.sender !== videoWindow?.webContents) return false;
+  await loadCinemaSettings();
+  return cinemaTapToggleEnabled;
+});
+ipcMain.handle('cinema-tap-toggle-set', async (event, enabled) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents || typeof enabled !== 'boolean') return false;
+  if (!await saveCinemaSettings({ tapToToggle: enabled })) return false;
+  cinemaTapToggleEnabled = enabled;
+  if (videoWindow && !videoWindow.isDestroyed()) videoWindow.webContents.send('cinema-tap-toggle-changed', enabled);
   return true;
 });
 ipcMain.handle('set-video-aspect', (event, width, height) => {

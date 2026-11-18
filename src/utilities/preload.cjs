@@ -11,7 +11,7 @@ contextBridge.exposeInMainWorld('player', {
     return () => ipcRenderer.removeListener('music-folder-changed', listener);
   },
   getTrackInfo: filePath => ipcRenderer.invoke('track-info', filePath),
-  getTrackSearchInfo: filePath => ipcRenderer.invoke('track-search-info', filePath),
+  getTrackSearchInfo: (filePath, includeLyrics = true) => ipcRenderer.invoke('track-search-info', filePath, includeLyrics),
   chooseVideoFolder: () => ipcRenderer.invoke('choose-video-folder'),
   scanVideoFolder: folder => ipcRenderer.invoke('scan-video-folder', folder),
   videoFileUrl: filePath => typeof filePath === 'string' ? pathToFileURL(filePath).href : '',
@@ -22,6 +22,13 @@ contextBridge.exposeInMainWorld('player', {
   setVideoFullscreen: fullscreen => ipcRenderer.invoke('set-video-fullscreen', fullscreen),
   getCinemaVolumeBoost: () => ipcRenderer.invoke('cinema-volume-boost-get'),
   setCinemaVolumeBoost: enabled => ipcRenderer.invoke('cinema-volume-boost-set', enabled),
+  getCinemaTapToggle: () => ipcRenderer.invoke('cinema-tap-toggle-get'),
+  setCinemaTapToggle: enabled => ipcRenderer.invoke('cinema-tap-toggle-set', enabled),
+  onCinemaTapToggleChanged: callback => {
+    const listener = (_event, enabled) => callback(enabled);
+    ipcRenderer.on('cinema-tap-toggle-changed', listener);
+    return () => ipcRenderer.removeListener('cinema-tap-toggle-changed', listener);
+  },
   onCinemaVolumeBoostChanged: callback => {
     const listener = (_event, enabled) => callback(enabled);
     ipcRenderer.on('cinema-volume-boost-changed', listener);

@@ -299,6 +299,7 @@ $('cinemaSettings').addEventListener('click', () => {
   $('cinemaSettings').setAttribute('aria-expanded', String(!open));
 });
 const cinemaVolumeBoostToggle = $('cinemaVolumeBoostToggle');
+const cinemaTapToggle = $('cinemaTapToggle');
 const cinemaVolumeWarning = $('cinemaVolumeWarning');
 async function saveCinemaVolumeBoost(enabled) {
   try {
@@ -317,6 +318,12 @@ cinemaVolumeBoostToggle.addEventListener('change', () => {
 });
 cinemaVolumeWarning.addEventListener('close', () => {
   if (cinemaVolumeWarning.returnValue === 'enable') void saveCinemaVolumeBoost(true);
+});
+cinemaTapToggle.addEventListener('change', async () => {
+  const enabled = cinemaTapToggle.checked;
+  if (await window.player.setCinemaTapToggle(enabled)) return;
+  cinemaTapToggle.checked = !enabled;
+  setStatus('Could not save the video tap setting. Try again.');
 });
 document.addEventListener('click', event => {
   if (!event.target.closest('#cinemaSettingsPanel, #cinemaSettings')) {
@@ -344,6 +351,9 @@ cinemaView.classList.toggle('hidden', mode !== 'cinema');
 if (mode === 'cinema') {
   window.player.getCinemaVolumeBoost().then(enabled => { cinemaVolumeBoostToggle.checked = Boolean(enabled); }).catch(() => {
     setStatus('Could not load the volume setting. Standard 100% limit is active.');
+  });
+  window.player.getCinemaTapToggle().then(enabled => { cinemaTapToggle.checked = Boolean(enabled); }).catch(() => {
+    setStatus('Could not load the video tap setting.');
   });
 }
 

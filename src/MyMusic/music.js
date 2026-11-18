@@ -3,13 +3,13 @@ const $ = id => document.getElementById(id);
 const ui = {
   searchButton: $('searchButton'), searchInput: $('searchInput'), modeToggle: $('modeToggle'), minimizeButton: $('minimizeButton'), closeButton: $('closeButton'), miniMuteButton: $('miniMuteButton'), playerBackButton: $('playerBackButton'),
   playButton: $('playButton'), previousButton: $('previousButton'), nextButton: $('nextButton'),
-  playbackOptions: document.querySelector('.playback-options'), playbackOptionsButton: $('playbackOptionsButton'), miniPlaybackOptionsButton: $('miniPlaybackOptionsButton'), playbackOptionsMenu: $('playbackOptionsMenu'), shuffleOption: $('shuffleOption'), repeatOptions: [...document.querySelectorAll('[data-repeat-mode]')], queueButton: $('queueButton'), homeButton: $('homeButton'),
+  playbackOptions: document.querySelector('.playback-options'), playbackOptionsButton: $('playbackOptionsButton'), miniPlaybackOptionsButton: $('miniPlaybackOptionsButton'), playbackOptionsMenu: $('playbackOptionsMenu'), shuffleOption: $('shuffleOption'), repeatOptions: [...document.querySelectorAll('[data-repeat-mode]')], queueButton: $('queueButton'), queueCount: $('queueCount'), homeButton: $('homeButton'), refreshLibraryButton: $('refreshLibraryButton'),
   favoriteButton: $('favoriteButton'), miniFavoriteButton: $('miniFavoriteButton'), playerAddPlaylistButton: $('playerAddPlaylistButton'), seekBar: $('seekBar'), volumeBar: $('volumeBar'), volumeMuteButton: $('volumeMuteButton'),
   volumeValue: $('volumeValue'), currentTime: $('currentTime'), duration: $('duration'),
   trackTitle: $('trackTitle'), trackArtist: $('trackArtist'), trackCount: $('trackCount'), libraryLabel: $('libraryLabel'),
   artwork: $('artwork'), artworkWrap: $('artworkWrap'), visualizer: $('visualizer'), queuePanel: $('queuePanel'), queueList: $('queueList'),
   toast: $('toast'), homeTitle: $('homeTitle'), homeShortcuts: $('homeShortcuts'), homeLibrary: $('homeLibrary'), sortToolbar: $('sortToolbar'), sortBy: $('sortBy'), sortPickerButton: $('sortPickerButton'), sortPickerValue: $('sortPickerValue'), sortPickerOptions: $('sortPickerOptions'), settingsView: $('settingsView'),
-  playlistGrid: $('playlistGrid'), homeSongCount: $('homeSongCount'), favoriteSongCount: $('favoriteSongCount'), settingsPlaylistList: $('settingsPlaylistList'), homeNotes: $('homeNotes'), colorNotesToggle: $('colorNotesToggle'), homeSearch: document.querySelector('.home-search'), homeSearchButton: $('homeSearchButton'), homeCreatePlaylistButton: $('homeCreatePlaylistButton'), homeSettingsButton: $('homeSettingsButton'), homeHomeButton: $('homeHomeButton'), playlistBackButton: $('playlistBackButton'), homeCloseButton: $('homeCloseButton'), homeMinimizeButton: $('homeMinimizeButton'), settingsFolderButton: $('settingsFolderButton'), settingsRescanButton: $('settingsRescanButton'), defaultAudioButton: $('defaultAudioButton'),
+  playlistGrid: $('playlistGrid'), homeSongCount: $('homeSongCount'), favoriteSongCount: $('favoriteSongCount'), recommendationSongCount: $('recommendationSongCount'), recommendationPreview: $('recommendationPreview'), recommendationsCard: $('recommendationsCard'), settingsPlaylistList: $('settingsPlaylistList'), homeNotes: $('homeNotes'), colorNotesToggle: $('colorNotesToggle'), homeSearch: document.querySelector('.home-search'), homeSearchButton: $('homeSearchButton'), homeRefreshButton: $('homeRefreshButton'), homeCreatePlaylistButton: $('homeCreatePlaylistButton'), homeSettingsButton: $('homeSettingsButton'), homeHomeButton: $('homeHomeButton'), playlistBackButton: $('playlistBackButton'), homeCloseButton: $('homeCloseButton'), homeMinimizeButton: $('homeMinimizeButton'), settingsFolderButton: $('settingsFolderButton'), settingsRescanButton: $('settingsRescanButton'), defaultAudioButton: $('defaultAudioButton'),
   allSongsCard: $('allSongsCard'), favoritesCard: $('favoritesCard'), playlistDialog: $('playlistDialog'), playlistForm: $('playlistForm'), miniEdgeColorToggle: $('miniEdgeColorToggle'), settingsColorToggle: $('settingsColorToggle'), settingsColorOptions: $('settingsColorOptions'), settingsPlaylistToggle: $('settingsPlaylistToggle'),
   playlistName: $('playlistName'), cancelPlaylist: $('cancelPlaylist'), addPlaylistDialog: $('addPlaylistDialog'), addPlaylistForm: $('addPlaylistForm'), playlistChoices: $('playlistChoices'), cancelAddPlaylist: $('cancelAddPlaylist'), confirmationDialog: $('confirmationDialog'), confirmationTitle: $('confirmationTitle'), confirmationMessage: $('confirmationMessage'), nowPlayingPlay: $('nowPlayingPlay'),
   nowPlayingBar: $('nowPlayingBar'), nowPlayingTitle: $('nowPlayingTitle'), nowPlayingArtist: $('nowPlayingArtist'), nowPlayingArt: $('nowPlayingArt')
@@ -35,7 +35,6 @@ let artworkEdgeRgb = '255,255,255';
 let toastTimer;
 let trackRequest = 0;
 let audioErrorRequest = -1;
-let libraryChangeTimer;
 let miniMode = false;
 let miniResizePending = false;
 let miniModeSyncPending = true;
@@ -48,12 +47,17 @@ let playerReturnPlaylistId = null;
 let playerReturnToPlayer = false;
 let playerReturnSearch = '';
 let playbackPaths = null;
+let playNextPaths = [];
 let playbackSource = null;
 let queueReturnToPlayer = false;
 let searchMetadataSource = null;
 let searchMetadataTask = null;
 let searchIndexing = false;
+let recommendationMetadataSource = null;
+let recommendationMetadataTask = null;
+let recommendationIndexing = false;
 let searchRenderTimer;
+let recommendationSessionPosition = 0;
 const searchFieldCache = new WeakMap();
 const queueArtworkObserver = new IntersectionObserver(entries => {
   for (const entry of entries) {
@@ -64,10 +68,24 @@ const queueArtworkObserver = new IntersectionObserver(entries => {
     void fetchTrackInfo(track).then(() => paintQueueArtwork(entry.target, track)).catch(() => paintQueueArtwork(entry.target, track));
   }
 }, { root: document.getElementById('queueList'), rootMargin: '72px' });
+const recommendationArtworkObserver = new IntersectionObserver(entries => {
+  for (const entry of entries) {
+    if (!entry.isIntersecting) continue;
+    recommendationArtworkObserver.unobserve(entry.target);
+    const track = entry.target.__musicTrack;
+    if (!track || track.artworkLoaded) { if (track) paintRecommendationArtwork(entry.target, track); continue; }
+    void fetchTrackInfo(track).then(() => paintRecommendationArtwork(entry.target, track)).catch(() => paintRecommendationArtwork(entry.target, track));
+  }
+}, { root: ui.recommendationPreview, rootMargin: '24px 36px' });
 let trackToAdd = null;
 let selectedPlaylistIds = new Set();
 let playlists = [];
 try { const saved = JSON.parse(localStorage.getItem('playlists') || '[]'); if (Array.isArray(saved)) playlists = saved.filter(item => item && typeof item.id === 'string' && typeof item.name === 'string' && Array.isArray(item.tracks)).map(item => ({ ...item, tracks: item.tracks.filter(path => typeof path === 'string') })); } catch {}
+const recommender = window.RecomendationAlgorithm.create({
+  getTracks: () => tracks,
+  getFavorites: () => favorites,
+  getPlaylists: () => playlists
+});
 let draggedIndex = -1;
 let suppressRowClick = false;
 let visualizerContext, analyser, visualizerFrame;
@@ -170,9 +188,11 @@ function setSeekValue(value) {
 function sourceTrackPaths() {
   if (playbackSource?.type === 'playlist') return playlists.find(item => item.id === playbackSource.id)?.tracks || [];
   if (playbackSource?.type === 'favorites') return tracks.filter(track => favorites.has(track.path)).map(track => track.path);
+  if (playbackSource?.type === 'recommendations') return playbackPaths || recommender.recommend(currentIndex);
   return tracks.map(track => track.path);
 }
 function setPlaybackPaths(paths, firstPath = tracks[currentIndex]?.path) {
+  playNextPaths = [];
   const available = [...new Set(paths)].filter(path => tracks.some(track => track.path === path));
   if (shuffle && available.length > 1) {
     for (let i = available.length - 1; i > 0; i--) {
@@ -318,12 +338,12 @@ function stopVisualizer() {
 }
 function setTrackCount() {
   const playlist = playbackSource?.type === 'playlist' ? playlists.find(item => item.id === playbackSource.id) : null;
-  const count = playbackSource?.type === 'favorites' ? tracks.filter(track => favorites.has(track.path)).length : playbackSource?.type === 'playlist' ? playlist?.tracks.length || 0 : tracks.length;
+  const count = playbackSource?.type === 'favorites' ? tracks.filter(track => favorites.has(track.path)).length : playbackSource?.type === 'playlist' ? playlist?.tracks.length || 0 : playbackSource?.type === 'recommendations' ? (playbackPaths?.length || recommender.recommend(currentIndex).length) : tracks.length;
   ui.trackCount.textContent = `${count} TRACK${count === 1 ? '' : 'S'}`;
 }
 function updatePlaybackHeader() {
   const playlist = playbackSource?.type === 'playlist' ? playlists.find(item => item.id === playbackSource.id) : null;
-  const name = playbackSource?.type === 'favorites' ? 'Favorites' : playlist?.name;
+  const name = playbackSource?.type === 'favorites' ? 'Favorites' : playbackSource?.type === 'recommendations' ? 'Made for You' : playlist?.name;
   if (playbackSource) ui.libraryLabel.textContent = `NOW PLAYING${name ? ` ${name}` : ''}`;
   setTrackCount();
 }
@@ -339,6 +359,8 @@ function renderPlaylists() {
   ui.homeSongCount.textContent = `${tracks.length} ${tracks.length === 1 ? 'song' : 'songs'}`;
   const favoriteCount = tracks.filter(track => favorites.has(track.path)).length;
   ui.favoriteSongCount.textContent = `${favoriteCount} ${favoriteCount === 1 ? 'song' : 'songs'}`;
+  ui.recommendationSongCount.textContent = !tracks.length ? 'Choose a music folder to begin' : recommendationIndexing ? 'Learning your listening taste…' : 'Picked from your library';
+  renderRecommendationPreview();
   ui.playlistGrid.replaceChildren();
   ui.settingsPlaylistList.replaceChildren();
   for (const playlist of playlists) {
@@ -362,28 +384,115 @@ function renderPlaylists() {
     row.append(playlistName, remove); ui.settingsPlaylistList.append(row);
   }
 }
+function renderRecommendationPreview() {
+  recommendationArtworkObserver.disconnect();
+  ui.recommendationPreview.replaceChildren();
+  if (!tracks.length || recommendationIndexing) {
+    const message = document.createElement('small');
+    message.className = 'recommendation-preview-message';
+    message.textContent = !tracks.length ? 'Add a music folder to get started' : 'Preparing your picks…';
+    ui.recommendationPreview.append(message);
+    return;
+  }
+  const rail = document.createElement('div'); rail.className = 'recommendation-rail';
+  const paths = recommender.recommend(currentIndex).slice(0, 10);
+  for (const path of paths) {
+    const track = tracks.find(item => item.path === path);
+    if (!track) continue;
+    const row = document.createElement('button');
+    row.type = 'button'; row.className = 'recommendation-song';
+    row.setAttribute('aria-label', `Play recommended song ${track.title || track.filename}`);
+    const artwork = document.createElement('span'); artwork.className = 'recommendation-song-art'; artwork.setAttribute('aria-hidden', 'true');
+    artwork.__musicTrack = track;
+    const fallback = document.createElement('span'); fallback.className = 'recommendation-song-fallback'; fallback.textContent = String.fromCharCode(9835);
+    const play = document.createElement('span'); play.className = 'recommendation-song-play'; play.setAttribute('aria-hidden', 'true');
+    play.innerHTML = '<svg viewBox="0 0 24 24"><path d="m8 5 12 7-12 7V5Z"/></svg>';
+    artwork.append(fallback, play);
+    if (track.artwork) paintRecommendationArtwork(artwork, track);
+    else if (!track.artworkLoaded) { artwork.__musicTrack = track; recommendationArtworkObserver.observe(artwork); }
+    const copy = document.createElement('span'); copy.className = 'recommendation-song-copy';
+    const title = document.createElement('strong'); title.textContent = track.title || track.filename.replace(/\.[^.]+$/, '');
+    const artist = document.createElement('small'); artist.textContent = track.artist || 'Unknown artist';
+    copy.append(title, artist); row.append(artwork, copy);
+    row.addEventListener('click', () => playRecommendedTrack(track.path));
+    rail.append(row);
+  }
+  ui.recommendationPreview.append(rail);
+  const updateFade = () => {
+    const maxScroll = Math.max(0, rail.scrollWidth - rail.clientWidth);
+    rail.classList.toggle('recommendation-scrollable', maxScroll > 1);
+    rail.classList.toggle('recommendation-fade-left', rail.scrollLeft > 1);
+    rail.classList.toggle('recommendation-fade-right', rail.scrollLeft < maxScroll - 1);
+  };
+  rail.addEventListener('scroll', updateFade, { passive: true });
+  rail.addEventListener('wheel', event => {
+    if (!event.shiftKey || !event.deltaY) return;
+    rail.scrollLeft += event.deltaY;
+    event.preventDefault();
+  }, { passive: false });
+  requestAnimationFrame(updateFade);
+}
+function paintRecommendationArtwork(element, track) {
+  if (!element?.isConnected || !track?.artwork) return;
+  element.style.backgroundImage = `url("${track.artwork}")`;
+  element.classList.add('has-art');
+}
+function playRecommendedTrack(path) {
+  const index = tracks.findIndex(track => track.path === path);
+  if (index < 0) return;
+  playbackSource = { type: 'recommendations' };
+  setPlaybackPaths(recommender.recommend(currentIndex).slice(0, 10), path);
+  void playTrack(index);
+}
+function ensureRecommendationMetadata() {
+  const source = tracks;
+  if (!source.length || recommendationMetadataSource === source && recommendationMetadataTask) return;
+  recommendationIndexing = true;
+  renderPlaylists();
+  void indexRecommendationMetadata().then(() => {
+    if (tracks !== source) return;
+    recommendationIndexing = false;
+    renderPlaylists();
+    if (homeView === 'recommendations') renderQueue();
+  }).catch(() => {
+    recommendationIndexing = false;
+    renderPlaylists();
+    if (homeView === 'recommendations') renderQueue();
+  });
+}
 function showHome(view = 'home', playlistId = null, returnToPlayer = false) {
   homeView = view; selectedPlaylistId = playlistId; queueReturnToPlayer = returnToPlayer;
+  if (view === 'home') {
+    ui.homeShortcuts.classList.remove('recommendations-revealed');
+    ui.homeShortcuts.classList.remove('recommendations-pulling');
+    const recommendationCard = ui.homeShortcuts.querySelector('.recommendations-card');
+    recommendationCard.style.maxHeight = '0px';
+    recommendationCard.style.opacity = '0';
+    recommendationCard.style.transform = 'translateY(-10px)';
+    recommendationCard.style.marginBottom = '0px';
+    recommendationCard.setAttribute('aria-hidden', 'true');
+  }
   const playlist = playlists.find(item => item.id === playlistId);
   const shell = document.querySelector('.window-shell');
   shell.classList.add('home-open'); shell.classList.remove('player-open');
   ui.queuePanel.classList.add('open'); ui.queuePanel.setAttribute('aria-hidden', 'false');
   ui.homeShortcuts.classList.toggle('hidden', view !== 'home');
   ui.homeCreatePlaylistButton.classList.toggle('hidden', view !== 'home');
-  ui.homeLibrary.classList.toggle('hidden', !['all', 'playlist', 'favorites', 'search'].includes(view));
+  ui.homeLibrary.classList.toggle('hidden', !['all', 'playlist', 'favorites', 'recommendations', 'search', 'queue'].includes(view));
   ui.settingsView.classList.toggle('hidden', view !== 'settings');
   ui.homeHomeButton.classList.toggle('hidden', view === 'home');
-  const canGoBack = ['playlist', 'favorites', 'all', 'search'].includes(view);
+  const canGoBack = ['playlist', 'favorites', 'all', 'recommendations', 'search', 'queue'].includes(view);
   ui.playlistBackButton.classList.toggle('hidden', !canGoBack);
   ui.playlistBackButton.title = queueReturnToPlayer ? 'Back to player' : 'Back to home';
   ui.playlistBackButton.setAttribute('aria-label', queueReturnToPlayer ? 'Back to player' : 'Back to home');
   ui.homeSettingsButton.classList.toggle('hidden', view === 'settings');
   ui.homeLibrary.classList.toggle('all-songs-view', view === 'all');
   ui.sortToolbar.classList.toggle('hidden', queueReturnToPlayer || !['all', 'playlist', 'favorites'].includes(view));
-  ui.homeTitle.textContent = view === 'playlist' ? playlist?.name || 'Playlist' : view === 'favorites' ? 'Favorites' : view === 'settings' ? 'Settings' : view === 'search' ? 'Search' : view === 'all' ? 'All Songs' : 'Home';
+  ui.homeTitle.textContent = view === 'playlist' ? playlist?.name || 'Playlist' : view === 'favorites' ? 'Favorites' : view === 'recommendations' ? 'Made for You' : view === 'settings' ? 'Settings' : view === 'search' ? 'Search' : view === 'queue' ? 'Queue' : view === 'all' ? 'All Songs' : 'Home';
   ui.queuePanel.classList.remove('search-open'); ui.homeSearch.classList.add('hidden');
   ui.searchInput.value = ''; renderPlaylists(); renderQueue();
   if (sortMode === 'title' && ['all', 'playlist', 'favorites'].includes(view)) void indexSearchMetadata();
+  if (['home', 'recommendations'].includes(view)) ensureRecommendationMetadata();
 }
 function showPlayer() {
   const shell = document.querySelector('.window-shell');
@@ -408,13 +517,13 @@ function returnToPlayerEntry() {
 function savePlaylists() { localStorage.setItem('playlists', JSON.stringify(playlists)); }
 function openSearch() {
   if (homeView === 'search' && ui.queuePanel.classList.contains('search-open')) {
-    void indexSearchMetadata(); ui.searchInput.focus(); return;
+    ui.searchInput.focus(); return;
   }
   searchReturnView = homeView;
   searchReturnPlaylistId = selectedPlaylistId;
   showHome('search');
   ui.homeSearch.classList.remove('hidden'); ui.queuePanel.classList.add('search-open');
-  void indexSearchMetadata(); requestAnimationFrame(() => ui.searchInput.focus());
+  requestAnimationFrame(() => ui.searchInput.focus());
 }
 function addTrackToPlaylist(path, promoteAdded = false) {
   if (!playlists.length) { showToast('Create a playlist first'); return; }
@@ -547,7 +656,11 @@ function trackSearchFields(track, field = null) {
 function fetchTrackInfo(track) {
   if (!track.infoPromise) {
     track.infoPromise = window.player.getTrackInfo(track.path)
-      .then(info => { track.artwork = info?.artwork || ''; return info; })
+      .then(info => {
+        track.artwork = info?.artwork || '';
+        if (Number.isFinite(Number(info?.duration)) && Number(info.duration) > 0) track.duration = Number(info.duration);
+        return info;
+      })
       .catch(error => { track.artwork = ''; throw error; })
       .finally(() => { track.artworkLoaded = true; });
   }
@@ -586,6 +699,7 @@ function scoreTrackSearch(track, clauses) {
 function indexSearchMetadata() {
   const source = tracks;
   if (!source.length) return Promise.resolve();
+  if (recommendationIndexing && recommendationMetadataSource === source && recommendationMetadataTask) return recommendationMetadataTask.then(() => indexSearchMetadata());
   if (searchMetadataSource === source && searchMetadataTask) return searchMetadataTask;
   searchMetadataSource = source;
   searchIndexing = true;
@@ -596,7 +710,9 @@ function indexSearchMetadata() {
       if (track.searchIndexed) continue;
       try { Object.assign(track, await window.player.getTrackSearchInfo(track.path) || {}); } catch {}
       searchFieldCache.delete(track);
+      recommender.invalidate(track);
       track.searchIndexed = true;
+      track.recommendationIndexed = true;
       if (++indexed % 24 === 0 && tracks === source) renderQueue();
     }
   })).then(() => {
@@ -604,20 +720,58 @@ function indexSearchMetadata() {
   });
   return searchMetadataTask;
 }
+function indexRecommendationMetadata() {
+  const source = tracks;
+  if (!source.length) return Promise.resolve();
+  if (searchIndexing && searchMetadataSource === source && searchMetadataTask) return searchMetadataTask.then(() => indexRecommendationMetadata());
+  if (recommendationMetadataSource === source && recommendationMetadataTask) return recommendationMetadataTask;
+  recommendationMetadataSource = source;
+  let cursor = 0;
+  recommendationMetadataTask = Promise.all(Array.from({ length: Math.min(2, source.length) }, async () => {
+    while (cursor < source.length && tracks === source) {
+      const track = source[cursor++];
+      if (track.recommendationIndexed || track.searchIndexed) { track.recommendationIndexed = true; continue; }
+      try { Object.assign(track, await window.player.getTrackSearchInfo(track.path, false) || {}); } catch {}
+      track.recommendationIndexed = true;
+      searchFieldCache.delete(track);
+      recommender.invalidate(track);
+    }
+  })).then(() => {
+    if (tracks === source) recommendationIndexing = false;
+  });
+  return recommendationMetadataTask;
+}
 function renderQueue() {
+  const previousScrollTop = ui.queueList.scrollTop;
   ui.queueList.replaceChildren();
   const playlist = homeView === 'playlist' ? playlists.find(item => item.id === selectedPlaylistId) : null;
-  let visibleTracks = playlist ? playlist.tracks.map(path => tracks.find(track => track.path === path)).filter(Boolean) : homeView === 'favorites' ? tracks.filter(track => favorites.has(track.path)) : tracks;
-  const activePlaybackQueue = queueReturnToPlayer && playbackPaths?.length && ((homeView === 'playlist' && playbackSource?.type === 'playlist' && playbackSource.id === playlist?.id) || (homeView === 'favorites' && playbackSource?.type === 'favorites') || (homeView === 'all' && playbackSource?.type === 'all'));
-  if (activePlaybackQueue) {
+  let visibleTracks = playlist ? playlist.tracks.map(path => tracks.find(track => track.path === path)).filter(Boolean) : homeView === 'favorites' ? tracks.filter(track => favorites.has(track.path)) : homeView === 'recommendations' ? recommender.recommend(currentIndex).map(path => tracks.find(track => track.path === path)).filter(Boolean) : tracks;
+  const activePlaybackQueue = queueReturnToPlayer && playbackPaths?.length && ((homeView === 'playlist' && playbackSource?.type === 'playlist' && playbackSource.id === playlist?.id) || (homeView === 'favorites' && playbackSource?.type === 'favorites') || (homeView === 'recommendations' && playbackSource?.type === 'recommendations') || (homeView === 'all' && playbackSource?.type === 'all'));
+  const queueView = homeView === 'queue';
+  if (queueView) {
+    const currentPath = tracks[currentIndex]?.path;
+    const queuedPathList = playNextPaths.filter(path => path !== currentPath && tracks.some(track => track.path === path));
+    const sequence = (playbackPaths || tracks.map(track => track.path)).filter(path => tracks.some(track => track.path === path));
+    const currentPosition = currentPath ? sequence.indexOf(currentPath) : -1;
+    const upcomingPaths = currentPosition >= 0 ? sequence.slice(currentPosition + 1) : [];
+    const orderedPaths = [...(currentPath ? [currentPath] : []), ...queuedPathList, ...upcomingPaths];
+    const seenPaths = new Set();
+    visibleTracks = orderedPaths.filter(path => {
+      if (seenPaths.has(path)) return false;
+      seenPaths.add(path);
+      return true;
+    }).map(path => tracks.find(track => track.path === path)).filter(Boolean);
+  } else if (activePlaybackQueue) {
     const currentPath = tracks[currentIndex]?.path;
     const currentPosition = playbackPaths.indexOf(currentPath);
-    const orderedPaths = currentPosition < 0 ? playbackPaths : [...playbackPaths.slice(currentPosition), ...playbackPaths.slice(0, currentPosition)];
+    const queuedPaths = playNextPaths.filter(path => path !== currentPath && tracks.some(track => track.path === path));
+    const followingPaths = currentPosition < 0 ? playbackPaths : [...playbackPaths.slice(currentPosition), ...playbackPaths.slice(0, currentPosition)];
+    const orderedPaths = [...queuedPaths, ...followingPaths];
     const order = new Map(orderedPaths.map((path, position) => [path, position]));
     visibleTracks = [...visibleTracks].sort((a, b) => (order.get(a.path) ?? Infinity) - (order.get(b.path) ?? Infinity));
-  } else if (homeView !== 'search' && sortMode === 'title') {
+  } else if (!['search', 'recommendations'].includes(homeView) && sortMode === 'title') {
     visibleTracks = [...visibleTracks].sort((a, b) => (a.title || a.filename.replace(/\.[^.]+$/, '')).localeCompare(b.title || b.filename.replace(/\.[^.]+$/, ''), undefined, { numeric: true, sensitivity: 'base' }));
-  } else if (homeView !== 'search' && sortMode === 'date-added') {
+  } else if (!['search', 'recommendations'].includes(homeView) && sortMode === 'date-added') {
     visibleTracks = [...visibleTracks].sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0) || a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' }));
   }
   const queryClauses = parseMusicSearch(ui.searchInput.value);
@@ -627,8 +781,16 @@ function renderQueue() {
   matches.forEach(({ track, index }) => {
     shown++;
     const row = document.createElement('div');
-    row.className = 'queue-item' + (index === currentIndex ? ' current' : '');
+    row.className = 'queue-item' + (index === currentIndex ? ' current' : '') + (playNextPaths.includes(track.path) ? ' queued-next' : '');
     row.draggable = homeView === 'all' && !shuffle && sortMode === 'manual'; row.dataset.index = String(index); row.title = row.draggable ? 'Drag to reorder' : '';
+    row.dataset.canRemove = playNextPaths.includes(track.path) || (homeView === 'queue' && track.path !== tracks[currentIndex]?.path) ? '1' : '0';
+    const swipeNextHint = document.createElement('span');
+    swipeNextHint.className = 'queue-swipe-hint next'; swipeNextHint.setAttribute('aria-hidden', 'true');
+    swipeNextHint.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 7l5 5-5 5"/></svg>';
+    const swipeRemoveHint = document.createElement('span');
+    swipeRemoveHint.className = 'queue-swipe-hint remove'; swipeRemoveHint.setAttribute('aria-hidden', 'true');
+    swipeRemoveHint.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+    const rowContent = document.createElement('div'); rowContent.className = 'queue-item-content';
     const indexCell = document.createElement('span'); indexCell.className = 'queue-index-cell';
     const artwork = document.createElement('span'); artwork.className = 'queue-artwork'; artwork.setAttribute('aria-hidden', 'true');
     const fallback = document.createElement('span'); fallback.className = 'queue-artwork-fallback'; fallback.textContent = String.fromCharCode(9835); artwork.append(fallback);
@@ -654,6 +816,16 @@ function renderQueue() {
     action.title = 'Add to playlist';
     action.setAttribute('aria-label', `${action.title}: ${track.title || track.filename}`);
     action.addEventListener('click', () => addTrackToPlaylist(track.path));
+    let removeFromQueue;
+    if (queueView && track.path !== tracks[currentIndex]?.path) {
+      removeFromQueue = document.createElement('button'); removeFromQueue.type = 'button'; removeFromQueue.className = 'queue-remove'; removeFromQueue.textContent = '−';
+      removeFromQueue.title = 'Remove from queue';
+      removeFromQueue.setAttribute('aria-label', `${removeFromQueue.title}: ${track.title || track.filename}`);
+      removeFromQueue.addEventListener('click', () => {
+        row.dataset.swipeLock = '1';
+        collapseQueueRow(row, () => removeTrackFromQueue(track.path, true, row));
+      });
+    }
     let removeFavorite;
     if (homeView === 'favorites' || homeView === 'playlist') {
       removeFavorite = document.createElement('button'); removeFavorite.type = 'button'; removeFavorite.className = 'queue-remove'; removeFavorite.textContent = '−';
@@ -667,20 +839,22 @@ function renderQueue() {
     const playButton = document.createElement('button'); playButton.type = 'button'; playButton.className = 'queue-play'; playButton.title = 'Play'; playButton.setAttribute('aria-label', `Play ${track.title || track.filename}`);
     playButton.innerHTML = index === currentIndex && !audio.paused ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h3v12H8zM14 6h3v12h-3z"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 10 6-10 6V6Z"/></svg>';
     indexCell.append(playButton);
-    row.append(indexCell, play, action);
-    if (removeFavorite) row.append(removeFavorite);
-    row.append(favorite);
+    rowContent.append(indexCell, play, action);
+    if (removeFromQueue) rowContent.append(removeFromQueue);
+    if (removeFavorite) rowContent.append(removeFavorite);
+    rowContent.append(favorite);
     const playFromList = () => {
       if (suppressRowClick) { suppressRowClick = false; return; }
-      const samePlaybackQueue = queueReturnToPlayer && ((playlist && playbackSource?.type === 'playlist' && playbackSource.id === playlist.id) || (!playlist && homeView === 'favorites' && playbackSource?.type === 'favorites') || (!playlist && homeView === 'all' && playbackSource?.type === 'all'));
-      playbackSource = playlist ? { type: 'playlist', id: playlist.id } : homeView === 'favorites' ? { type: 'favorites' } : { type: 'all' };
-      const paths = playlist ? playlist.tracks : homeView === 'favorites' ? visibleTracks.map(item => item.path) : tracks.map(item => item.path);
+      const samePlaybackQueue = homeView === 'queue' ? Boolean(playbackPaths?.length) : queueReturnToPlayer && ((playlist && playbackSource?.type === 'playlist' && playbackSource.id === playlist.id) || (!playlist && homeView === 'favorites' && playbackSource?.type === 'favorites') || (!playlist && homeView === 'recommendations' && playbackSource?.type === 'recommendations') || (!playlist && homeView === 'all' && playbackSource?.type === 'all'));
+      if (homeView !== 'queue') playbackSource = playlist ? { type: 'playlist', id: playlist.id } : homeView === 'favorites' ? { type: 'favorites' } : homeView === 'recommendations' ? { type: 'recommendations' } : { type: 'all' };
+      if (homeView === 'queue') playNextPaths = playNextPaths.filter(path => path !== track.path);
+      const paths = playlist ? playlist.tracks : ['favorites', 'recommendations'].includes(homeView) ? visibleTracks.map(item => item.path) : tracks.map(item => item.path);
       if (!samePlaybackQueue) setPlaybackPaths(paths, track.path);
       renderQueue(); playTrack(Number(row.dataset.index));
     };
     play.addEventListener('click', () => { showPlayer(); playFromList(); });
     playButton.addEventListener('click', playFromList);
-    row.addEventListener('dragstart', event => { draggedIndex = index; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', String(index)); row.classList.add('dragging'); });
+    row.addEventListener('dragstart', event => { if (row.dataset.swipeLock === '1') { event.preventDefault(); return; } draggedIndex = index; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', String(index)); row.classList.add('dragging'); });
     row.addEventListener('dragend', () => { draggedIndex = -1; row.classList.remove('dragging'); });
     row.addEventListener('dragover', event => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; row.classList.add('drag-over'); });
     row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
@@ -695,10 +869,20 @@ function renderQueue() {
       saveTrackOrder(); renderQueue(); updateFavorite();
       suppressRowClick = true; setTimeout(() => { suppressRowClick = false; }, 500);
     });
+    row.append(swipeNextHint, swipeRemoveHint, rowContent);
     ui.queueList.append(row);
   });
-  if (!shown) { const empty = document.createElement('div'); empty.className = 'queue-empty'; empty.textContent = homeView === 'search' && !queryClauses.length ? 'Search by song, artist, album, genre, or lyrics' : homeView === 'search' && searchIndexing ? 'Checking song details…' : queryClauses.length ? 'No matching songs' : homeView === 'favorites' ? 'Your favorite songs will appear here' : !tracks.length ? 'Choose a folder to add songs' : playlist ? 'This playlist is empty. Add songs from All Songs.' : 'Choose a folder to add songs'; ui.queueList.append(empty); }
+  if (!shown) { const empty = document.createElement('div'); empty.className = 'queue-empty'; empty.textContent = queueView ? 'Nothing in the queue. Hover a song and swipe right to play it next.' : homeView === 'search' && !queryClauses.length ? 'Search by song, artist, album, or lyrics' : homeView === 'search' && searchIndexing ? 'Checking song details…' : homeView === 'recommendations' && recommendationIndexing ? 'Learning your music taste…' : queryClauses.length ? 'No matching songs' : homeView === 'favorites' ? 'Your favorite songs will appear here' : homeView === 'recommendations' ? 'Play and favorite songs to personalize your recommendations.' : !tracks.length ? 'Choose a folder to add songs' : playlist ? 'This playlist is empty. Add songs from All Songs.' : 'Choose a folder to add songs'; ui.queueList.append(empty); }
+  updateQueueBadge();
+  if (previousScrollTop && ui.queueList.scrollTop !== previousScrollTop) ui.queueList.scrollTop = previousScrollTop;
 }
+function updateQueueBadge() {
+  ui.queueButton.title = playNextPaths.length ? `Queue · ${playNextPaths.length} next` : 'Queue';
+  ui.queueButton.setAttribute('aria-label', playNextPaths.length ? `Show queue, ${playNextPaths.length} songs playing next` : 'Show queue');
+  ui.queueCount.hidden = !playNextPaths.length;
+  ui.queueCount.textContent = playNextPaths.length > 99 ? '99+' : String(playNextPaths.length);
+}
+
 function updateFavorite() {
   const path = tracks[currentIndex]?.path;
   const active = Boolean(path && favorites.has(path));
@@ -749,6 +933,8 @@ function resetArtwork() {
 }
 async function playTrack(index, autoplay = true) {
   if (!tracks.length) { showToast('Choose a music folder first'); return; }
+  const nextPath = tracks[(index + tracks.length) % tracks.length]?.path;
+  if (nextPath && recommender.isTracking(nextPath) === false) recommender.finish(false, true, audio.duration);
   if (!playbackSource) playbackSource = { type: 'all' };
   if (!playbackPaths && shuffle) setPlaybackPaths(sourceTrackPaths(), tracks[(index + tracks.length) % tracks.length]?.path);
   savePlaybackPosition(true);
@@ -774,6 +960,7 @@ async function playTrack(index, autoplay = true) {
     track.artist = info?.artist || 'Unknown artist';
     track.album = info?.album || '';
     searchFieldCache.delete(track);
+    recommender.invalidate(track);
     if (request === trackRequest) {
       ui.trackTitle.textContent = track.title;
       ui.trackArtist.textContent = info?.album ? `${track.artist}  ·  ${info.album}` : track.artist;
@@ -807,6 +994,7 @@ function reconcileLibraryScan(found, previousTrackPath = tracks[currentIndex]?.p
     return candidate === root || candidate.startsWith(`${root}\\`) || candidate.startsWith(`${root}/`);
   };
   const keepReference = filePath => !belongsToFolder(filePath) || available.has(filePath.toLocaleLowerCase());
+  recommender.prune(savedPath => !belongsToFolder(savedPath) || available.has(savedPath.toLocaleLowerCase()));
   const lastPlayedPath = localStorage.getItem('lastPlayedTrack');
   if (lastPlayedPath && belongsToFolder(lastPlayedPath) && !available.has(lastPlayedPath.toLocaleLowerCase())) {
     localStorage.removeItem('lastPlayedTrack');
@@ -858,6 +1046,7 @@ function reconcileLibraryScan(found, previousTrackPath = tracks[currentIndex]?.p
     setPlaying(false); resetArtwork();
   }
   setTrackCount(); renderQueue(); renderPlaylists(); updateFavorite(); updatePlaybackHeader(); updateNowPlaying();
+  if (['home', 'recommendations'].includes(homeView)) ensureRecommendationMetadata();
   return currentWasRemoved;
 }
 
@@ -888,6 +1077,13 @@ async function rescan() {
 function moveTrack(direction) {
   if (!tracks.length) { showToast('Choose a music folder first'); return; }
   if (currentIndex < 0) return playTrack(0);
+  if (direction > 0 && playNextPaths.length) {
+    const nextPath = playNextPaths.find(path => tracks.some(track => track.path === path));
+    if (nextPath) {
+      playNextPaths = playNextPaths.filter(path => path !== nextPath);
+      return playTrack(tracks.findIndex(track => track.path === nextPath));
+    }
+  }
   if (!playbackPaths) setPlaybackPaths(sourceTrackPaths());
   const sequence = playbackPaths?.filter(path => tracks.some(track => track.path === path)) || tracks.map(track => track.path);
   const current = sequence.indexOf(tracks[currentIndex].path);
@@ -895,18 +1091,279 @@ function moveTrack(direction) {
   return playTrack(tracks.findIndex(track => track.path === sequence[(current + direction + sequence.length) % sequence.length]));
 }
 
+function queuePlayNext(index, row = null) {
+  const track = tracks[index];
+  if (!track) return false;
+  if (index === currentIndex) { showToast('That song is already playing', 1400); return false; }
+  if (currentIndex < 0 || !audio.getAttribute('src')) {
+    showPlayer();
+    void playTrack(index);
+    return true;
+  }
+  playNextPaths = [track.path, ...playNextPaths.filter(path => path !== track.path)];
+  if (row) { row.classList.add('queued-next'); row.dataset.canRemove = '1'; }
+  updateQueueBadge();
+  showToast(`Playing next: ${track.title || track.filename.replace(/\.[^.]+$/, '')}`, 1400);
+  return true;
+}
+function removeTrackFromQueue(path, fromQueueView = homeView === 'queue', row = null) {
+  playNextPaths = playNextPaths.filter(item => item !== path);
+  if (fromQueueView && playbackPaths) playbackPaths = playbackPaths.filter(item => item !== path);
+  if (row) {
+    row.classList.remove('queued-next');
+    row.dataset.canRemove = fromQueueView || playNextPaths.includes(path) ? '1' : '0';
+  }
+  updateQueueBadge();
+  if (fromQueueView && row?.isConnected) row.remove();
+  if (fromQueueView && !ui.queueList.querySelector('.queue-item')) renderQueue();
+  showToast('Removed from queue', 1400);
+}
+function collapseQueueRow(row, done) {
+  if (!row?.isConnected) { done(); return; }
+  row.style.height = `${row.offsetHeight}px`;
+  void row.offsetHeight;
+  row.classList.add('swipe-removing');
+  const content = row.querySelector('.queue-item-content');
+  if (content) {
+    content.style.transition = 'transform .22s cubic-bezier(.32,.72,0,1),opacity .18s ease';
+    content.style.transform = 'translate3d(-100%,0,0)';
+    content.style.opacity = '0';
+  }
+  setTimeout(done, 220);
+}
+
+// Apple Music / Spotify style swipe: the song card follows your finger with a
+// rubber-band, the action icon behind it grows as you pull, and releasing past
+// the threshold plays the song next (right) or removes it (left).
+const SWIPE_COMMIT = 46;
+const SWIPE_MAX = 132;
+const SWIPE_EDGE = 34;
+const SWIPE_VELOCITY = 0.5;
+const SWIPE_SETTLE_MS = 200;
+const SWIPE_SETTLE_EASE = 'cubic-bezier(.22,1,.36,1)';
+const WHEEL_IDLE_MS = 90;
+const WHEEL_MAX_MS = 750;
+let swipeState = null;
+let wheelSwipe = null;
+let swipeCooldownUntil = 0;
+let lastHorizontalWheelAt = 0;
+
+function swipeContent(row) {
+  return row.querySelector('.queue-item-content');
+}
+function setSwipeRow(row, distance) {
+  const content = swipeContent(row);
+  if (!content) return 0;
+  const canRemove = row.dataset.canRemove === '1';
+  const limit = distance < 0 && !canRemove ? SWIPE_EDGE : SWIPE_MAX;
+  const amount = Math.abs(distance);
+  const dx = (distance < 0 ? -1 : 1) * (amount <= limit ? amount : limit + (amount - limit) * .12);
+  row._swipeOffset = dx;
+  content.style.transform = `translate3d(${dx}px,0,0)`;
+  const progress = Math.min(1, Math.abs(dx) / SWIPE_COMMIT);
+  row.style.setProperty('--swipe-p', progress.toFixed(3));
+  row.style.setProperty('--swipe-next', dx > 0 ? progress.toFixed(3) : '0');
+  row.style.setProperty('--swipe-remove', dx < 0 && canRemove ? progress.toFixed(3) : '0');
+  row.style.setProperty('--swipe-next-w', `${dx > 0 ? Math.round(dx) : 0}px`);
+  row.style.setProperty('--swipe-remove-w', `${dx < 0 && canRemove ? Math.round(-dx) : 0}px`);
+  return dx;
+}
+function holdSwipeRow(row) {
+  const content = swipeContent(row);
+  if (!content) return;
+  clearTimeout(row._swipeResetTimer);
+  row.classList.remove('swipe-settling');
+  content.style.transition = 'none';
+  content.style.opacity = '1';
+  row.classList.add('swiping');
+}
+function clearSwipeRow(row) {
+  const content = swipeContent(row);
+  row.classList.remove('swiping', 'swipe-settling');
+  if (content) { content.style.transition = ''; content.style.transform = ''; content.style.opacity = ''; }
+  for (const prop of ['--swipe-p', '--swipe-next', '--swipe-remove', '--swipe-next-w', '--swipe-remove-w']) row.style.removeProperty(prop);
+  row._swipeOffset = 0;
+  row.dataset.swipeLock = '0';
+  if (row.dataset.dragRestore === '1') { row.draggable = true; delete row.dataset.dragRestore; }
+}
+// One crisp pass back to rest. The card always glides from where the finger
+// left it straight to zero with a decelerating curve, so it never springs past
+// its starting position and never bounces.
+function resetSwipeRow(row) {
+  const content = swipeContent(row);
+  if (!content) return;
+  const offset = row._swipeOffset || 0;
+  row.classList.remove('swiping');
+  row.dataset.swipeLock = '0';
+  if (row.dataset.dragRestore === '1') { row.draggable = true; delete row.dataset.dragRestore; }
+  clearTimeout(row._swipeResetTimer);
+  content.style.transition = 'none';
+  content.style.transform = `translate3d(${offset}px,0,0)`;
+  void content.offsetWidth; // flush the held frame so the return starts from here
+  row.classList.add('swipe-settling');
+  content.style.transition = `transform ${SWIPE_SETTLE_MS}ms ${SWIPE_SETTLE_EASE}`;
+  content.style.transform = 'translate3d(0,0,0)';
+  row.style.setProperty('--swipe-p', '0');
+  row.style.setProperty('--swipe-next', '0');
+  row.style.setProperty('--swipe-remove', '0');
+  row._swipeOffset = 0;
+  row._swipeResetTimer = setTimeout(() => { if (row.isConnected) clearSwipeRow(row); }, SWIPE_SETTLE_MS + 60);
+}
+function finishSwipeRow(row, distance, velocity = 0) {
+  const index = Number(row.dataset.index);
+  const track = tracks[index];
+  if (!track) { resetSwipeRow(row); return; }
+  const canRemove = row.dataset.canRemove === '1';
+  const right = distance >= SWIPE_COMMIT || (velocity > SWIPE_VELOCITY && distance > 14);
+  const left = canRemove && (distance <= -SWIPE_COMMIT || (velocity < -SWIPE_VELOCITY && distance < -14));
+  if (!right && !left) { resetSwipeRow(row); return; }
+  row.classList.remove('swiping');
+  swipeCooldownUntil = Date.now() + SWIPE_SETTLE_MS;
+  if (right) {
+    queuePlayNext(index, row);
+    resetSwipeRow(row);
+    return;
+  }
+  if (homeView !== 'queue') {
+    // In the library, left swipe only removes the song from the queue. The song
+    // stays in the library, so it no longer vanishes and reappears.
+    resetSwipeRow(row);
+    setTimeout(() => removeTrackFromQueue(track.path, false, row), 140);
+    return;
+  }
+  collapseQueueRow(row, () => removeTrackFromQueue(track.path, true, row));
+}
+
+function endWheelSwipe() {
+  if (!wheelSwipe) return;
+  const { row, distance } = wheelSwipe;
+  clearTimeout(wheelSwipe.timer);
+  wheelSwipe = null;
+  finishSwipeRow(row, distance);
+}
+ui.queueList.addEventListener('wheel', event => {
+  const now = Date.now();
+  if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+  // Trackpads keep sending deltas after the fingers lift. Remember when the
+  // last one arrived so leftover momentum can never restart the swipe and make
+  // the card drift and spring again.
+  const gap = now - lastHorizontalWheelAt;
+  lastHorizontalWheelAt = now;
+  if (swipeState || now < swipeCooldownUntil) return;
+  const row = event.target instanceof Element ? event.target.closest('.queue-item') : null;
+  if (!row) return;
+  event.preventDefault();
+  if (wheelSwipe && wheelSwipe.row !== row) endWheelSwipe();
+  if (!wheelSwipe) {
+    if (gap < 100) return;
+    wheelSwipe = { row, raw: 0, distance: 0, timer: 0, startedAt: now, ema: 0, peakEma: 0, count: 0 };
+    holdSwipeRow(row);
+  }
+  const gesture = wheelSwipe;
+  clearTimeout(gesture.timer);
+  // Keep the raw finger distance and let setSwipeRow apply the resistance, so
+  // reversing direction responds instantly instead of fighting a clamped value.
+  gesture.raw -= event.deltaX;
+  gesture.distance = setSwipeRow(row, gesture.raw);
+  // A trackpad keeps gliding after the fingers lift and that glide decays
+  // smoothly. Waiting for it to stop kept the card out for over a second, while
+  // committing at the threshold snapped it back under the fingers. Follow the
+  // gesture and settle the moment the deltas start coasting down.
+  const magnitude = Math.abs(event.deltaX);
+  gesture.count++;
+  gesture.ema = gesture.count === 1 ? magnitude : gesture.ema * .62 + magnitude * .38;
+  gesture.peakEma = Math.max(gesture.peakEma, gesture.ema);
+  const coasting = gesture.count > 2
+    && now - gesture.startedAt > 100
+    && gesture.ema < gesture.peakEma * .55;
+  if (coasting || now - gesture.startedAt > WHEEL_MAX_MS) { endWheelSwipe(); return; }
+  // Fallback for deltas that simply stop without a decay tail.
+  gesture.timer = setTimeout(() => {
+    if (wheelSwipe !== gesture) return;
+    wheelSwipe = null;
+    finishSwipeRow(gesture.row, gesture.distance);
+  }, WHEEL_IDLE_MS);
+}, { passive: false });
+
+function endPointerSwipe(event) {
+  window.removeEventListener('pointermove', movePointerSwipe);
+  window.removeEventListener('pointerup', endPointerSwipe);
+  window.removeEventListener('pointercancel', endPointerSwipe);
+  const state = swipeState;
+  swipeState = null;
+  if (!state) return;
+  if (state.frame) { cancelAnimationFrame(state.frame); state.frame = 0; }
+  if (!state.horizontal) return;
+  if (event?.type === 'pointercancel') { resetSwipeRow(state.row); return; }
+  const finalX = Number.isFinite(event?.clientX) ? event.clientX : state.pendingX;
+  const distance = setSwipeRow(state.row, finalX - state.startX);
+  finishSwipeRow(state.row, distance, state.velocity);
+}
+function movePointerSwipe(event) {
+  const state = swipeState;
+  if (!state || event.pointerId !== state.pointerId) return;
+  const totalX = event.clientX - state.originX;
+  const dy = event.clientY - state.startY;
+  if (!state.horizontal) {
+    if (Math.abs(totalX) < 5 && Math.abs(dy) < 5) return;
+    // Vertical movement keeps the existing drag-to-reorder/scroll behaviour.
+    if (Math.abs(totalX) <= Math.abs(dy) * 1.2) { endPointerSwipe(); return; }
+    state.horizontal = true;
+    // Pull from the point where the gesture locks in so the card starts moving
+    // with the finger instead of jumping the dead-zone distance.
+    state.startX = event.clientX;
+    if (state.row.draggable) { state.row.draggable = false; state.row.dataset.dragRestore = '1'; }
+    state.row.dataset.swipeLock = '1';
+    holdSwipeRow(state.row);
+  }
+  event.preventDefault();
+  // Track flick speed so a quick, short swipe still commits like it does in
+  // Apple Music instead of snapping back.
+  const now = performance.now();
+  const dt = Math.max(8, now - state.lastTime);
+  const instant = (event.clientX - state.lastX) / dt;
+  state.velocity = state.velocity * .6 + instant * .4;
+  state.lastX = event.clientX;
+  state.lastTime = now;
+  state.pendingX = event.clientX;
+  suppressRowClick = true;
+  clearTimeout(state.clickTimer);
+  state.clickTimer = setTimeout(() => { suppressRowClick = false; }, 250);
+  if (!state.frame) {
+    // Paint at most once per frame so a fast drag stays smooth.
+    state.frame = requestAnimationFrame(() => {
+      state.frame = 0;
+      if (swipeState !== state || !state.horizontal) return;
+      setSwipeRow(state.row, state.pendingX - state.startX);
+    });
+  }
+}
+ui.queueList.addEventListener('pointerdown', event => {
+  if (swipeState || wheelSwipe || Date.now() < swipeCooldownUntil || event.isPrimary === false || (event.pointerType === 'mouse' && event.button !== 0)) return;
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target || target.closest('.queue-add, .queue-favorite, .queue-remove, .queue-play')) return;
+  const row = target.closest('.queue-item');
+  if (!row) return;
+  swipeState = { row, originX: event.clientX, startX: event.clientX, startY: event.clientY, pendingX: event.clientX, pointerId: event.pointerId, horizontal: false, clickTimer: 0, lastX: event.clientX, lastTime: performance.now(), velocity: 0, frame: 0 };
+  window.addEventListener('pointermove', movePointerSwipe);
+  window.addEventListener('pointerup', endPointerSwipe);
+  window.addEventListener('pointercancel', endPointerSwipe);
+});
+
 function restartCurrentTrack() {
   if (currentIndex >= 0) return playTrack(currentIndex);
   return playTrack(0);
 }
 
 function handleTrackEnded() {
-  const sequence = (playbackPaths || sourceTrackPaths()).filter(filePath => tracks.some(track => track.path === filePath));
-  const current = sequence.indexOf(tracks[currentIndex]?.path);
+  recommender.finish(true, false, audio.duration);
   if (repeatMode === 'one') {
     if (currentIndex >= 0) void playTrack(currentIndex);
     return;
   }
+  if (playNextPaths.length) { moveTrack(1); return; }
+  const sequence = (playbackPaths || sourceTrackPaths()).filter(filePath => tracks.some(track => track.path === filePath));
+  const current = sequence.indexOf(tracks[currentIndex]?.path);
   if (current >= 0 && current < sequence.length - 1) { moveTrack(1); return; }
   if (repeatMode === 'all' && sequence.length) { moveTrack(1); return; }
   setPlaying(false);
@@ -914,10 +1371,9 @@ function handleTrackEnded() {
 }
 ui.settingsFolderButton.addEventListener('click', selectFolder);
 ui.settingsRescanButton.addEventListener('click', rescan);
-window.player.onMusicFolderChanged(() => {
-  clearTimeout(libraryChangeTimer);
-  libraryChangeTimer = setTimeout(() => { void rescan(); }, 450);
-});
+const refreshLibrary = () => { if (folder) void rescan(); else void selectFolder(); };
+ui.refreshLibraryButton.addEventListener('click', refreshLibrary);
+ui.homeRefreshButton.addEventListener('click', refreshLibrary);
 ui.defaultAudioButton.addEventListener('click', async () => {
   if (!await window.player.openDefaultApps('audio')) showToast('Install MyPlayer to register MyMusic with Windows.');
 });
@@ -953,6 +1409,68 @@ ui.homeSettingsButton.addEventListener('click', () => showHome('settings'));
 ui.homeSearchButton.addEventListener('click', openSearch);
 ui.allSongsCard.addEventListener('click', () => showHome('all'));
 ui.favoritesCard.addEventListener('click', () => showHome('favorites'));
+ui.recommendationsCard.addEventListener('click', () => showHome('recommendations'));
+let recommendationPullStartY = null;
+let recommendationPullHeight = 0;
+const revealRecommendations = () => {
+  if (homeView !== 'home' || ui.homeShortcuts.classList.contains('recommendations-revealed')) return;
+  const card = ui.homeShortcuts.querySelector('.recommendations-card');
+  recommendationPullHeight = card.scrollHeight;
+  ui.homeShortcuts.classList.add('recommendations-revealed');
+  ui.homeShortcuts.classList.remove('recommendations-pulling');
+  card.style.maxHeight = `${recommendationPullHeight}px`;
+  card.style.opacity = '';
+  card.style.transform = '';
+  card.style.marginBottom = '14px';
+  card.setAttribute('aria-hidden', 'false');
+  requestAnimationFrame(() => {
+    if (homeView !== 'home' || !ui.homeShortcuts.classList.contains('recommendations-revealed')) return;
+    const arts = ui.recommendationPreview.querySelectorAll('.recommendation-song-art');
+    for (const art of arts) {
+      const track = art.__musicTrack;
+      if (track?.artwork) paintRecommendationArtwork(art, track);
+      else if (track && !track.artworkLoaded) {
+        recommendationArtworkObserver.unobserve(art);
+        recommendationArtworkObserver.observe(art);
+      }
+    }
+  });
+};
+ui.homeShortcuts.addEventListener('wheel', event => {
+  if (ui.homeShortcuts.scrollTop <= 1 && event.deltaY < -24) revealRecommendations();
+}, { passive: true });
+ui.homeShortcuts.addEventListener('touchstart', event => {
+  recommendationPullStartY = homeView === 'home' && ui.homeShortcuts.scrollTop <= 1 && !ui.homeShortcuts.classList.contains('recommendations-revealed')
+    ? event.touches[0]?.clientY ?? null
+    : null;
+}, { passive: true });
+ui.homeShortcuts.addEventListener('touchmove', event => {
+  if (recommendationPullStartY === null || homeView !== 'home' || ui.homeShortcuts.scrollTop > 1) return;
+  const currentY = event.touches[0]?.clientY;
+  if (!Number.isFinite(currentY)) return;
+  const distance = Math.max(0, currentY - recommendationPullStartY);
+  if (distance < 8) return;
+  const card = ui.homeShortcuts.querySelector('.recommendations-card');
+  ui.homeShortcuts.classList.add('recommendations-pulling');
+  if (!recommendationPullHeight) recommendationPullHeight = Math.max(card.scrollHeight, 1);
+  const revealedHeight = Math.min(recommendationPullHeight, distance * 2);
+  card.style.maxHeight = `${revealedHeight}px`;
+  card.style.opacity = String(Math.min(1, revealedHeight / 36));
+  card.style.transform = `translateY(${Math.max(-10, -10 + revealedHeight / recommendationPullHeight * 10)}px)`;
+  card.style.marginBottom = revealedHeight > 0 ? '14px' : '0px';
+}, { passive: true });
+ui.homeShortcuts.addEventListener('touchend', event => {
+  const startY = recommendationPullStartY;
+  recommendationPullStartY = null;
+  const endY = event.changedTouches[0]?.clientY;
+  if (startY === null) return;
+  if (Number.isFinite(endY) && endY - startY > 52 && ui.homeShortcuts.scrollTop <= 1) revealRecommendations();
+  else if (ui.homeShortcuts.classList.contains('recommendations-pulling')) {
+    const card = ui.homeShortcuts.querySelector('.recommendations-card');
+    ui.homeShortcuts.classList.remove('recommendations-pulling');
+    card.style.maxHeight = '0px'; card.style.opacity = '0'; card.style.transform = 'translateY(-10px)'; card.style.marginBottom = '0px';
+  }
+}, { passive: true });
 ui.homeCreatePlaylistButton.addEventListener('click', () => { ui.playlistName.value = ''; ui.playlistDialog.showModal(); ui.playlistName.focus(); });
 ui.cancelPlaylist.addEventListener('click', () => ui.playlistDialog.close());
 ui.cancelAddPlaylist.addEventListener('click', () => ui.addPlaylistDialog.close());
@@ -1071,7 +1589,8 @@ ui.playButton.addEventListener('click', async () => {
   else audio.pause();
 });
 function togglePlayerWithF() {
-  if (miniMode || miniResizePending) return;
+  if (miniResizePending || miniModeSyncPending) return;
+  if (miniMode) { void resizePlayer(false); return; }
   const shell = document.querySelector('.window-shell');
   if (shell.classList.contains('player-open')) returnToPlayerEntry();
   else showPlayer();
@@ -1189,7 +1708,7 @@ ui.searchButton.addEventListener('click', openSearch);
 ui.searchInput.addEventListener('input', () => {
   clearTimeout(searchRenderTimer);
   searchRenderTimer = setTimeout(renderQueue, 90);
-  void indexSearchMetadata();
+  if (ui.searchInput.value.trim()) void indexSearchMetadata();
 });
 ui.sortPickerButton.addEventListener('click', () => {
   const open = ui.sortPickerOptions.hidden;
@@ -1222,10 +1741,7 @@ ui.sortBy.addEventListener('change', () => {
   renderQueue();
   if (sortMode === 'title') void indexSearchMetadata();
 });
-ui.queueButton.addEventListener('click', () => {
-  if (playbackSource?.type === 'playlist') showHome('playlist', playbackSource.id, true);
-  else showHome(playbackSource?.type === 'favorites' ? 'favorites' : 'all', null, true);
-});
+ui.queueButton.addEventListener('click', () => showHome('queue', null, true));
 ui.playlistBackButton.addEventListener('click', () => {
   if (homeView === 'search') showHome(searchReturnView, searchReturnPlaylistId);
   else if (queueReturnToPlayer) showPlayer();
@@ -1283,11 +1799,21 @@ const savedVolume = Number(localStorage.getItem('volume'));
 if (Number.isFinite(savedVolume) && localStorage.getItem('volume') !== null) {
   audio.volume = savedVolume / 100; ui.volumeBar.value = String(savedVolume); ui.volumeValue.textContent = String(savedVolume); paintRange(ui.volumeBar, savedVolume);
 } else paintRange(ui.volumeBar, 75);
-audio.addEventListener('play', () => { setPlaying(true); startVisualizer(); renderQueue(); });
-audio.addEventListener('pause', () => { savePlaybackPosition(true); setPlaying(false); stopVisualizer(); renderQueue(); });
+audio.addEventListener('play', () => {
+  setPlaying(true); startVisualizer(); renderQueue();
+  const track = tracks[currentIndex];
+  if (track) recommender.start(track.path);
+  recommendationSessionPosition = audio.currentTime;
+});
+audio.addEventListener('pause', () => { savePlaybackPosition(true); recommender.flush(); setPlaying(false); stopVisualizer(); renderQueue(); });
 audio.addEventListener('timeupdate', () => {
   if (seekPointerActive) return;
   savePlaybackPosition();
+  const track = tracks[currentIndex];
+  if (!audio.paused && track && recommender.isTracking(track.path)) {
+    recommender.recordProgress(track.path, audio.currentTime - recommendationSessionPosition);
+    recommendationSessionPosition = audio.currentTime;
+  }
   if (!Number.isFinite(audio.duration)) return;
   const percent = audio.currentTime / audio.duration * 100;
   setSeekValue(percent * 10);
@@ -1314,7 +1840,7 @@ audio.addEventListener('error', () => {
   if (audio.src && failedTrack) void handleTrackPlaybackError(failedTrack, trackRequest);
   else setPlaying(false);
 });
-window.addEventListener('pagehide', () => savePlaybackPosition(true));
+window.addEventListener('pagehide', () => { savePlaybackPosition(true); recommender.flush(); });
 const startupAudioPath = new URLSearchParams(location.search).get('filePath');
 if (startupAudioPath) {
   const separator = Math.max(startupAudioPath.lastIndexOf('\\'), startupAudioPath.lastIndexOf('/'));
