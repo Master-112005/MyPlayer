@@ -9,8 +9,8 @@ const ui = {
   trackTitle: $('trackTitle'), trackArtist: $('trackArtist'), trackCount: $('trackCount'), libraryLabel: $('libraryLabel'),
   artwork: $('artwork'), artworkWrap: $('artworkWrap'), visualizer: $('visualizer'), queuePanel: $('queuePanel'), queueList: $('queueList'),
   toast: $('toast'), homeTitle: $('homeTitle'), homeShortcuts: $('homeShortcuts'), homeLibrary: $('homeLibrary'), sortToolbar: $('sortToolbar'), sortBy: $('sortBy'), sortPickerButton: $('sortPickerButton'), sortPickerValue: $('sortPickerValue'), sortPickerOptions: $('sortPickerOptions'), settingsView: $('settingsView'),
-  playlistGrid: $('playlistGrid'), homeSongCount: $('homeSongCount'), favoriteSongCount: $('favoriteSongCount'), recommendationSongCount: $('recommendationSongCount'), recommendationPreview: $('recommendationPreview'), recommendationsCard: $('recommendationsCard'), settingsPlaylistList: $('settingsPlaylistList'), homeNotes: $('homeNotes'), colorNotesToggle: $('colorNotesToggle'), homeSearch: document.querySelector('.home-search'), homeSearchButton: $('homeSearchButton'), homeRefreshButton: $('homeRefreshButton'), homeCreatePlaylistButton: $('homeCreatePlaylistButton'), homeSettingsButton: $('homeSettingsButton'), homeHomeButton: $('homeHomeButton'), playlistBackButton: $('playlistBackButton'), homeCloseButton: $('homeCloseButton'), homeMinimizeButton: $('homeMinimizeButton'), settingsFolderButton: $('settingsFolderButton'), settingsRescanButton: $('settingsRescanButton'), defaultAudioButton: $('defaultAudioButton'),
-  allSongsCard: $('allSongsCard'), favoritesCard: $('favoritesCard'), playlistDialog: $('playlistDialog'), playlistForm: $('playlistForm'), miniEdgeColorToggle: $('miniEdgeColorToggle'), settingsColorToggle: $('settingsColorToggle'), settingsColorOptions: $('settingsColorOptions'), settingsPlaylistToggle: $('settingsPlaylistToggle'),
+  playlistGrid: $('playlistGrid'), homeSongCount: $('homeSongCount'), favoriteSongCount: $('favoriteSongCount'), recommendationSongCount: $('recommendationSongCount'), recommendationPreview: $('recommendationPreview'), recommendationsCard: $('recommendationsCard'), homeNotes: $('homeNotes'), colorNotesToggle: $('colorNotesToggle'), homeSearch: document.querySelector('.home-search'), homeSearchButton: $('homeSearchButton'), homeRefreshButton: $('homeRefreshButton'), homeCreatePlaylistButton: $('homeCreatePlaylistButton'), homeSettingsButton: $('homeSettingsButton'), homeHomeButton: $('homeHomeButton'), playlistBackButton: $('playlistBackButton'), homeCloseButton: $('homeCloseButton'), homeMinimizeButton: $('homeMinimizeButton'), settingsFolderButton: $('settingsFolderButton'), settingsRescanButton: $('settingsRescanButton'), defaultAudioButton: $('defaultAudioButton'),
+  allSongsCard: $('allSongsCard'), favoritesCard: $('favoritesCard'), playlistDialog: $('playlistDialog'), playlistForm: $('playlistForm'), miniEdgeColorToggle: $('miniEdgeColorToggle'), settingsColorToggle: $('settingsColorToggle'), settingsColorOptions: $('settingsColorOptions'), playlistMenuWrap: $('playlistMenuWrap'), playlistMenuButton: $('playlistMenuButton'), playlistMenu: $('playlistMenu'), playlistCoverGrid: $('playlistCoverGrid'), playlistMenuName: $('playlistMenuName'), playlistMenuSave: $('playlistMenuSave'), playlistMenuDelete: $('playlistMenuDelete'), recommendationsToggle: $('recommendationsToggle'),
   playlistName: $('playlistName'), cancelPlaylist: $('cancelPlaylist'), addPlaylistDialog: $('addPlaylistDialog'), addPlaylistForm: $('addPlaylistForm'), playlistChoices: $('playlistChoices'), cancelAddPlaylist: $('cancelAddPlaylist'), confirmationDialog: $('confirmationDialog'), confirmationTitle: $('confirmationTitle'), confirmationMessage: $('confirmationMessage'), nowPlayingPlay: $('nowPlayingPlay'),
   nowPlayingBar: $('nowPlayingBar'), nowPlayingTitle: $('nowPlayingTitle'), nowPlayingArtist: $('nowPlayingArtist'), nowPlayingArt: $('nowPlayingArt')
 };
@@ -78,6 +78,7 @@ const recommendationArtworkObserver = new IntersectionObserver(entries => {
   }
 }, { root: ui.recommendationPreview, rootMargin: '24px 36px' });
 let trackToAdd = null;
+let trackToPromote = false;
 let selectedPlaylistIds = new Set();
 let playlists = [];
 try { const saved = JSON.parse(localStorage.getItem('playlists') || '[]'); if (Array.isArray(saved)) playlists = saved.filter(item => item && typeof item.id === 'string' && typeof item.name === 'string' && Array.isArray(item.tracks)).map(item => ({ ...item, tracks: item.tracks.filter(path => typeof path === 'string') })); } catch {}
@@ -87,6 +88,7 @@ const recommender = window.RecomendationAlgorithm.create({
   getPlaylists: () => playlists
 });
 let draggedIndex = -1;
+let draggedPath = '';
 let suppressRowClick = false;
 let visualizerContext, analyser, visualizerFrame;
 let edgeEnergy = 0;
@@ -355,6 +357,21 @@ function updateNowPlaying() {
   ui.nowPlayingArt.style.backgroundImage = hasArtwork ? ui.artwork.style.backgroundImage : '';
   ui.nowPlayingArt.classList.toggle('has-art', hasArtwork);
 }
+const playlistCovers = [
+  { key: 'aurora', label: 'Aurora' },
+  { key: 'ember', label: 'Ember' },
+  { key: 'tide', label: 'Tide' },
+  { key: 'grove', label: 'Grove' },
+  { key: 'violet', label: 'Violet' },
+  { key: 'sunset', label: 'Sunset' },
+  { key: 'gold', label: 'Gold' },
+  { key: 'mono', label: 'Mono' }
+];
+function playlistCoverKey(playlist) {
+  const cover = String(playlist?.cover || '');
+  // No cover is the default; playlists only get one when the user picks it.
+  return playlistCovers.some(item => item.key === cover) ? cover : '';
+}
 function renderPlaylists() {
   ui.homeSongCount.textContent = `${tracks.length} ${tracks.length === 1 ? 'song' : 'songs'}`;
   const favoriteCount = tracks.filter(track => favorites.has(track.path)).length;
@@ -362,27 +379,100 @@ function renderPlaylists() {
   ui.recommendationSongCount.textContent = !tracks.length ? 'Choose a music folder to begin' : recommendationIndexing ? 'Learning your listening taste…' : 'Picked from your library';
   renderRecommendationPreview();
   ui.playlistGrid.replaceChildren();
-  ui.settingsPlaylistList.replaceChildren();
   for (const playlist of playlists) {
     const card = document.createElement('button');
     card.className = 'home-card playlist-card'; card.type = 'button';
-    const art = document.createElement('span'); art.className = 'home-card-icon'; art.textContent = String.fromCharCode(9835);
+    const coverKey = playlistCoverKey(playlist);
+    if (coverKey) {
+      const cover = document.createElement('span');
+      cover.className = `playlist-cover cover-${coverKey}`;
+      cover.setAttribute('aria-hidden', 'true');
+      card.append(cover);
+    } else {
+      const icon = document.createElement('span');
+      icon.className = 'home-card-icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.textContent = String.fromCharCode(9835);
+      card.append(icon);
+    }
     const name = document.createElement('strong'); name.textContent = playlist.name;
     const count = document.createElement('small'); count.textContent = `${playlist.tracks.length} ${playlist.tracks.length === 1 ? 'song' : 'songs'}`;
-    card.append(art, name, count); card.addEventListener('click', () => showHome('playlist', playlist.id)); ui.playlistGrid.append(card);
-    const row = document.createElement('div'); row.className = 'settings-playlist-row';
-    const playlistName = document.createElement('span'); playlistName.textContent = playlist.name;
-    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'settings-action remove-playlist'; remove.textContent = 'Remove';
-    remove.addEventListener('click', async () => {
-      if (!await confirmInApp(`Remove “${playlist.name}”? The song files will stay in your library.`)) return;
-      if (playbackSource?.type === 'playlist' && playbackSource.id === playlist.id) { playbackSource = { type: 'all' }; playbackPaths = null; }
-      playlists = playlists.filter(item => item.id !== playlist.id); savePlaylists();
-      updatePlaybackHeader();
-      if (homeView === 'playlist' && selectedPlaylistId === playlist.id) showHome(); else { renderPlaylists(); renderQueue(); }
-      showToast(`Removed ${playlist.name}`);
-    });
-    row.append(playlistName, remove); ui.settingsPlaylistList.append(row);
+    card.append(name, count); card.addEventListener('click', () => showHome('playlist', playlist.id)); ui.playlistGrid.append(card);
   }
+}
+function currentMenuPlaylist() {
+  return homeView === 'playlist' ? playlists.find(item => item.id === selectedPlaylistId) || null : null;
+}
+function syncPlaylistMenuCovers(playlist) {
+  const active = playlistCoverKey(playlist);
+  for (const swatch of ui.playlistCoverGrid.querySelectorAll('[data-cover]')) {
+    swatch.setAttribute('aria-pressed', String(swatch.dataset.cover === active));
+  }
+}
+function renderPlaylistMenuCovers(playlist) {
+  const active = playlistCoverKey(playlist);
+  ui.playlistCoverGrid.replaceChildren(...playlistCovers.map(cover => {
+    const swatch = document.createElement('button');
+    swatch.type = 'button';
+    swatch.className = `cover-swatch cover-${cover.key}`;
+    swatch.dataset.cover = cover.key;
+    swatch.setAttribute('aria-label', `${cover.label} playlist cover`);
+    swatch.setAttribute('aria-pressed', String(cover.key === active));
+    swatch.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4.5 4.5L19 6.5"/></svg>';
+    return swatch;
+  }));
+}
+function positionPlaylistMenu() {
+  const button = ui.playlistMenuButton.getBoundingClientRect();
+  const shellElement = document.querySelector('.window-shell');
+  const shell = shellElement.getBoundingClientRect();
+  const border = parseFloat(getComputedStyle(shellElement).borderRightWidth) || 0;
+  ui.playlistMenu.style.top = `${Math.round(button.bottom - shell.top - border + 10)}px`;
+  ui.playlistMenu.style.right = `${Math.round(Math.max(8, shell.right - border - button.right))}px`;
+}
+function openPlaylistMenu() {
+  const playlist = currentMenuPlaylist();
+  if (!playlist) return;
+  closeSortPicker();
+  renderPlaylistMenuCovers(playlist);
+  ui.playlistMenuName.value = playlist.name;
+  positionPlaylistMenu();
+  ui.playlistMenu.hidden = false;
+  ui.playlistMenuButton.setAttribute('aria-expanded', 'true');
+  requestAnimationFrame(() => { ui.playlistMenuName.focus(); ui.playlistMenuName.select(); });
+}
+function closePlaylistMenu() {
+  if (ui.playlistMenu.hidden) return;
+  ui.playlistMenu.hidden = true;
+  ui.playlistMenuButton.setAttribute('aria-expanded', 'false');
+}
+function togglePlaylistMenu() {
+  if (ui.playlistMenu.hidden) openPlaylistMenu(); else closePlaylistMenu();
+}
+function renameCurrentPlaylist() {
+  const playlist = currentMenuPlaylist();
+  if (!playlist) return;
+  const name = ui.playlistMenuName.value.trim();
+  if (!name) { showToast('Playlist name cannot be empty', 1700); ui.playlistMenuName.focus(); return; }
+  if (name === playlist.name) { closePlaylistMenu(); return; }
+  playlist.name = name; savePlaylists();
+  ui.homeTitle.textContent = name;
+  updatePlaybackHeader(); renderPlaylists(); renderQueue();
+  closePlaylistMenu();
+  showToast(`Renamed to ${name}`, 1700);
+}
+async function deleteCurrentPlaylist() {
+  const playlist = currentMenuPlaylist();
+  if (!playlist) return;
+  closePlaylistMenu();
+  if (!await confirmInApp(`Remove “${playlist.name}”? The song files will stay in your library.`)) return;
+  if (playbackSource?.type === 'playlist' && playbackSource.id === playlist.id) { playbackSource = { type: 'all' }; playbackPaths = null; }
+  playlists = playlists.filter(item => item.id !== playlist.id);
+  savePlaylists();
+  updatePlaybackHeader();
+  if (homeView === 'playlist' && selectedPlaylistId === playlist.id) showHome();
+  else { renderPlaylists(); renderQueue(); }
+  showToast(`Removed ${playlist.name}`);
 }
 function renderRecommendationPreview() {
   recommendationArtworkObserver.disconnect();
@@ -392,6 +482,7 @@ function renderRecommendationPreview() {
     message.className = 'recommendation-preview-message';
     message.textContent = !tracks.length ? 'Add a music folder to get started' : 'Preparing your picks…';
     ui.recommendationPreview.append(message);
+    if (ui.homeShortcuts.classList.contains('recommendations-revealed')) requestAnimationFrame(syncRecommendationsHeight);
     return;
   }
   const rail = document.createElement('div'); rail.className = 'recommendation-rail';
@@ -431,6 +522,7 @@ function renderRecommendationPreview() {
     event.preventDefault();
   }, { passive: false });
   requestAnimationFrame(updateFade);
+  if (ui.homeShortcuts.classList.contains('recommendations-revealed')) requestAnimationFrame(syncRecommendationsHeight);
 }
 function paintRecommendationArtwork(element, track) {
   if (!element?.isConnected || !track?.artwork) return;
@@ -462,22 +554,14 @@ function ensureRecommendationMetadata() {
 }
 function showHome(view = 'home', playlistId = null, returnToPlayer = false) {
   homeView = view; selectedPlaylistId = playlistId; queueReturnToPlayer = returnToPlayer;
-  if (view === 'home') {
-    ui.homeShortcuts.classList.remove('recommendations-revealed');
-    ui.homeShortcuts.classList.remove('recommendations-pulling');
-    const recommendationCard = ui.homeShortcuts.querySelector('.recommendations-card');
-    recommendationCard.style.maxHeight = '0px';
-    recommendationCard.style.opacity = '0';
-    recommendationCard.style.transform = 'translateY(-10px)';
-    recommendationCard.style.marginBottom = '0px';
-    recommendationCard.setAttribute('aria-hidden', 'true');
-  }
+  if (view === 'home') setRecommendationsExpanded(false);
   const playlist = playlists.find(item => item.id === playlistId);
   const shell = document.querySelector('.window-shell');
   shell.classList.add('home-open'); shell.classList.remove('player-open');
   ui.queuePanel.classList.add('open'); ui.queuePanel.setAttribute('aria-hidden', 'false');
   ui.homeShortcuts.classList.toggle('hidden', view !== 'home');
   ui.homeCreatePlaylistButton.classList.toggle('hidden', view !== 'home');
+  ui.recommendationsToggle.classList.toggle('hidden', view !== 'home');
   ui.homeLibrary.classList.toggle('hidden', !['all', 'playlist', 'favorites', 'recommendations', 'search', 'queue'].includes(view));
   ui.settingsView.classList.toggle('hidden', view !== 'settings');
   ui.homeHomeButton.classList.toggle('hidden', view === 'home');
@@ -488,6 +572,9 @@ function showHome(view = 'home', playlistId = null, returnToPlayer = false) {
   ui.homeSettingsButton.classList.toggle('hidden', view === 'settings');
   ui.homeLibrary.classList.toggle('all-songs-view', view === 'all');
   ui.sortToolbar.classList.toggle('hidden', queueReturnToPlayer || !['all', 'playlist', 'favorites'].includes(view));
+  const canManagePlaylist = view === 'playlist' && Boolean(playlist) && !queueReturnToPlayer;
+  ui.playlistMenuWrap.classList.toggle('hidden', !canManagePlaylist);
+  closePlaylistMenu();
   ui.homeTitle.textContent = view === 'playlist' ? playlist?.name || 'Playlist' : view === 'favorites' ? 'Favorites' : view === 'recommendations' ? 'Made for You' : view === 'settings' ? 'Settings' : view === 'search' ? 'Search' : view === 'queue' ? 'Queue' : view === 'all' ? 'All Songs' : 'Home';
   ui.queuePanel.classList.remove('search-open'); ui.homeSearch.classList.add('hidden');
   ui.searchInput.value = ''; renderPlaylists(); renderQueue();
@@ -495,12 +582,18 @@ function showHome(view = 'home', playlistId = null, returnToPlayer = false) {
   if (['home', 'recommendations'].includes(view)) ensureRecommendationMetadata();
 }
 function showPlayer() {
+  closePlaylistMenu();
   const shell = document.querySelector('.window-shell');
   if (!shell.classList.contains('player-open')) {
-    playerReturnView = homeView;
-    playerReturnPlaylistId = selectedPlaylistId;
-    playerReturnToPlayer = queueReturnToPlayer;
-    playerReturnSearch = ui.searchInput.value;
+    // The queue is a detour that opens from the player, so remembering it as
+    // the player's origin makes Back bounce between the two screens. Keep the
+    // view the player was actually opened from (home, playlist, search, ...).
+    if (homeView !== 'queue') {
+      playerReturnView = homeView;
+      playerReturnPlaylistId = selectedPlaylistId;
+      playerReturnToPlayer = queueReturnToPlayer;
+      playerReturnSearch = ui.searchInput.value;
+    }
   }
   shell.classList.remove('home-open'); shell.classList.add('player-open');
   ui.queuePanel.classList.remove('open'); ui.queuePanel.setAttribute('aria-hidden', 'true');
@@ -528,6 +621,7 @@ function openSearch() {
 function addTrackToPlaylist(path, promoteAdded = false) {
   if (!playlists.length) { showToast('Create a playlist first'); return; }
   trackToAdd = path;
+  trackToPromote = promoteAdded;
   selectedPlaylistIds = new Set(playlists.filter(playlist => playlist.tracks.includes(path)).map(playlist => playlist.id));
   ui.playlistChoices.replaceChildren(...playlists.map(playlist => {
     const alreadyAdded = playlist.tracks.includes(path);
@@ -782,8 +876,9 @@ function renderQueue() {
     shown++;
     const row = document.createElement('div');
     row.className = 'queue-item' + (index === currentIndex ? ' current' : '') + (playNextPaths.includes(track.path) ? ' queued-next' : '');
-    row.draggable = homeView === 'all' && !shuffle && sortMode === 'manual'; row.dataset.index = String(index); row.title = row.draggable ? 'Drag to reorder' : '';
-    row.dataset.canRemove = playNextPaths.includes(track.path) || (homeView === 'queue' && track.path !== tracks[currentIndex]?.path) ? '1' : '0';
+    const canReorder = queueView ? track.path !== tracks[currentIndex]?.path : (homeView === 'all' || homeView === 'playlist') && !shuffle && sortMode === 'manual';
+    row.draggable = canReorder; row.dataset.index = String(index); row.dataset.path = track.path; row.title = row.draggable ? (queueView ? 'Drag to move in the queue' : 'Drag to reorder') : '';
+    row.dataset.canRemove = playNextPaths.includes(track.path) || homeView === 'playlist' || (homeView === 'queue' && track.path !== tracks[currentIndex]?.path) ? '1' : '0';
     const swipeNextHint = document.createElement('span');
     swipeNextHint.className = 'queue-swipe-hint next'; swipeNextHint.setAttribute('aria-hidden', 'true');
     swipeNextHint.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 7l5 5-5 5"/></svg>';
@@ -816,32 +911,12 @@ function renderQueue() {
     action.title = 'Add to playlist';
     action.setAttribute('aria-label', `${action.title}: ${track.title || track.filename}`);
     action.addEventListener('click', () => addTrackToPlaylist(track.path));
-    let removeFromQueue;
-    if (queueView && track.path !== tracks[currentIndex]?.path) {
-      removeFromQueue = document.createElement('button'); removeFromQueue.type = 'button'; removeFromQueue.className = 'queue-remove'; removeFromQueue.textContent = '−';
-      removeFromQueue.title = 'Remove from queue';
-      removeFromQueue.setAttribute('aria-label', `${removeFromQueue.title}: ${track.title || track.filename}`);
-      removeFromQueue.addEventListener('click', () => {
-        row.dataset.swipeLock = '1';
-        collapseQueueRow(row, () => removeTrackFromQueue(track.path, true, row));
-      });
-    }
-    let removeFavorite;
-    if (homeView === 'favorites' || homeView === 'playlist') {
-      removeFavorite = document.createElement('button'); removeFavorite.type = 'button'; removeFavorite.className = 'queue-remove'; removeFavorite.textContent = '−';
-      removeFavorite.title = homeView === 'favorites' ? 'Remove from favorites' : 'Remove from playlist';
-      removeFavorite.setAttribute('aria-label', `${removeFavorite.title}: ${track.title || track.filename}`);
-      removeFavorite.addEventListener('click', () => {
-        if (homeView === 'favorites') { favorites.delete(track.path); localStorage.setItem('favorites', JSON.stringify([...favorites])); updatePlaybackHeader(); renderPlaylists(); renderQueue(); updateFavorite(); }
-        else removeTrackFromPlaylist(track.path);
-      });
-    }
     const playButton = document.createElement('button'); playButton.type = 'button'; playButton.className = 'queue-play'; playButton.title = 'Play'; playButton.setAttribute('aria-label', `Play ${track.title || track.filename}`);
     playButton.innerHTML = index === currentIndex && !audio.paused ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h3v12H8zM14 6h3v12h-3z"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 10 6-10 6V6Z"/></svg>';
     indexCell.append(playButton);
-    rowContent.append(indexCell, play, action);
-    if (removeFromQueue) rowContent.append(removeFromQueue);
-    if (removeFavorite) rowContent.append(removeFavorite);
+    rowContent.append(indexCell, play);
+    // Rows are arranged by dragging; playlists and the queue keep no add/remove controls.
+    if (homeView !== 'playlist' && !queueView) rowContent.append(action);
     rowContent.append(favorite);
     const playFromList = () => {
       if (suppressRowClick) { suppressRowClick = false; return; }
@@ -854,12 +929,46 @@ function renderQueue() {
     };
     play.addEventListener('click', () => { showPlayer(); playFromList(); });
     playButton.addEventListener('click', playFromList);
-    row.addEventListener('dragstart', event => { if (row.dataset.swipeLock === '1') { event.preventDefault(); return; } draggedIndex = index; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', String(index)); row.classList.add('dragging'); });
-    row.addEventListener('dragend', () => { draggedIndex = -1; row.classList.remove('dragging'); });
+    row.addEventListener('dragstart', event => { if (row.dataset.swipeLock === '1') { event.preventDefault(); return; } draggedIndex = index; draggedPath = track.path; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', track.path); row.classList.add('dragging'); });
+    row.addEventListener('dragend', () => { draggedIndex = -1; draggedPath = ''; row.classList.remove('dragging'); });
     row.addEventListener('dragover', event => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; row.classList.add('drag-over'); });
     row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
     row.addEventListener('drop', event => {
       event.preventDefault(); row.classList.remove('drag-over');
+      if (homeView === 'queue') {
+        const currentPath = tracks[currentIndex]?.path;
+        if (draggedPath === currentPath) return;
+        const visible = [...ui.queueList.querySelectorAll('.queue-item')].map(item => item.dataset.path);
+        const from = visible.indexOf(draggedPath);
+        const to = visible.indexOf(track.path);
+        if (from < 0 || to < 0 || from === to) return;
+        visible.splice(to, 0, visible.splice(from, 1)[0]);
+        const sequence = (playbackPaths || tracks.map(item => item.path)).filter(path => tracks.some(item => item.path === path));
+        const currentPosition = currentPath ? sequence.indexOf(currentPath) : -1;
+        if (currentPosition >= 0) {
+          playbackPaths = [...sequence.slice(0, currentPosition), currentPath, ...visible.filter(path => path !== currentPath)];
+        } else {
+          playbackPaths = visible;
+        }
+        playNextPaths = [];
+        renderQueue(); updateQueueBadge();
+        suppressRowClick = true; setTimeout(() => { suppressRowClick = false; }, 500);
+        return;
+      }
+      if (homeView === 'playlist') {
+        const target = playlists.find(item => item.id === selectedPlaylistId);
+        if (!target) return;
+        const from = target.tracks.indexOf(draggedPath);
+        const to = target.tracks.indexOf(track.path);
+        if (from < 0 || to < 0 || from === to) return;
+        target.tracks.splice(from, 1); target.tracks.splice(to, 0, draggedPath);
+        savePlaylists(); renderPlaylists();
+        if (playbackSource?.type === 'playlist' && playbackSource.id === target.id) setPlaybackPaths(target.tracks);
+        renderQueue();
+        showToast(`Moved in ${target.name}`, 1200);
+        suppressRowClick = true; setTimeout(() => { suppressRowClick = false; }, 500);
+        return;
+      }
       const from = draggedIndex, to = Number(row.dataset.index);
       if (from < 0 || from === to) return;
       const [moved] = tracks.splice(from, 1); tracks.splice(to, 0, moved);
@@ -1147,6 +1256,7 @@ let swipeState = null;
 let wheelSwipe = null;
 let swipeCooldownUntil = 0;
 let lastHorizontalWheelAt = 0;
+let lastWheelDirection = 0;
 
 function swipeContent(row) {
   return row.querySelector('.queue-item-content');
@@ -1224,6 +1334,11 @@ function finishSwipeRow(row, distance, velocity = 0) {
     resetSwipeRow(row);
     return;
   }
+  if (homeView === 'playlist') {
+    // Swipe left removes the song from the open playlist, mirroring the queue gesture.
+    collapseQueueRow(row, () => removeTrackFromPlaylist(track.path));
+    return;
+  }
   if (homeView !== 'queue') {
     // In the library, left swipe only removes the song from the queue. The song
     // stays in the library, so it no longer vanishes and reappears.
@@ -1244,21 +1359,27 @@ function endWheelSwipe() {
 ui.queueList.addEventListener('wheel', event => {
   const now = Date.now();
   if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
-  // Trackpads keep sending deltas after the fingers lift. Remember when the
-  // last one arrived so leftover momentum can never restart the swipe and make
-  // the card drift and spring again.
-  const gap = now - lastHorizontalWheelAt;
-  lastHorizontalWheelAt = now;
-  if (swipeState || now < swipeCooldownUntil) return;
+  const direction = Math.sign(event.deltaX);
+  // While a swipe settles, trackpad momentum keeps arriving. Remember when the
+  // last delta landed so leftover momentum cannot restart the swipe, but keep
+  // the committed gesture's direction so a deliberate reverse swipe is still
+  // recognised once the settle finishes.
+  if (swipeState || now < swipeCooldownUntil) { lastHorizontalWheelAt = now; return; }
   const row = event.target instanceof Element ? event.target.closest('.queue-item') : null;
   if (!row) return;
   event.preventDefault();
   if (wheelSwipe && wheelSwipe.row !== row) endWheelSwipe();
   if (!wheelSwipe) {
-    if (gap < 100) return;
+    // A same-direction burst this close to the previous delta is momentum. A
+    // reversal is the user asking for the opposite action, so let it start at
+    // once instead of making them move the pointer away and back.
+    const gap = now - lastHorizontalWheelAt;
+    if (gap < 100 && direction === lastWheelDirection) { lastHorizontalWheelAt = now; return; }
     wheelSwipe = { row, raw: 0, distance: 0, timer: 0, startedAt: now, ema: 0, peakEma: 0, count: 0 };
     holdSwipeRow(row);
   }
+  lastHorizontalWheelAt = now;
+  lastWheelDirection = direction;
   const gesture = wheelSwipe;
   clearTimeout(gesture.timer);
   // Keep the raw finger distance and let setSwipeRow apply the resistance, so
@@ -1395,11 +1516,6 @@ ui.settingsColorToggle.addEventListener('click', () => {
   ui.settingsColorToggle.setAttribute('aria-expanded', String(expanded));
   ui.settingsColorOptions.hidden = !expanded;
 });
-ui.settingsPlaylistToggle.addEventListener('click', () => {
-  const expanded = ui.settingsPlaylistToggle.getAttribute('aria-expanded') !== 'true';
-  ui.settingsPlaylistToggle.setAttribute('aria-expanded', String(expanded));
-  ui.settingsPlaylistList.hidden = !expanded;
-});
 ui.homeCloseButton.addEventListener('click', () => window.player.close());
 ui.homeMinimizeButton.addEventListener('click', () => window.player.minimize());
 ui.homeButton.addEventListener('click', () => showHome());
@@ -1410,23 +1526,35 @@ ui.homeSearchButton.addEventListener('click', openSearch);
 ui.allSongsCard.addEventListener('click', () => showHome('all'));
 ui.favoritesCard.addEventListener('click', () => showHome('favorites'));
 ui.recommendationsCard.addEventListener('click', () => showHome('recommendations'));
-let recommendationPullStartY = null;
-let recommendationPullHeight = 0;
-const revealRecommendations = () => {
-  if (homeView !== 'home' || ui.homeShortcuts.classList.contains('recommendations-revealed')) return;
+function syncRecommendationsHeight() {
+  if (!ui.homeShortcuts.classList.contains('recommendations-revealed')) return;
   const card = ui.homeShortcuts.querySelector('.recommendations-card');
-  recommendationPullHeight = card.scrollHeight;
-  ui.homeShortcuts.classList.add('recommendations-revealed');
-  ui.homeShortcuts.classList.remove('recommendations-pulling');
-  card.style.maxHeight = `${recommendationPullHeight}px`;
+  if (card) card.style.maxHeight = `${card.scrollHeight}px`;
+}
+function setRecommendationsExpanded(expanded) {
+  const revealed = Boolean(expanded) && homeView === 'home';
+  const card = ui.homeShortcuts.querySelector('.recommendations-card');
+  ui.homeShortcuts.classList.toggle('recommendations-revealed', revealed);
+  ui.recommendationsToggle.setAttribute('aria-expanded', String(revealed));
+  ui.recommendationsToggle.title = revealed ? 'Hide recommendations' : 'Show recommendations';
+  ui.recommendationsToggle.setAttribute('aria-label', revealed ? 'Hide recommendations' : 'Show recommendations');
+  if (!card) return;
+  if (!revealed) {
+    card.style.maxHeight = '0px';
+    card.style.opacity = '0';
+    card.style.transform = 'translateY(-10px)';
+    card.style.marginBottom = '0px';
+    card.setAttribute('aria-hidden', 'true');
+    return;
+  }
+  card.style.maxHeight = `${card.scrollHeight}px`;
   card.style.opacity = '';
   card.style.transform = '';
   card.style.marginBottom = '14px';
   card.setAttribute('aria-hidden', 'false');
   requestAnimationFrame(() => {
-    if (homeView !== 'home' || !ui.homeShortcuts.classList.contains('recommendations-revealed')) return;
-    const arts = ui.recommendationPreview.querySelectorAll('.recommendation-song-art');
-    for (const art of arts) {
+    if (!ui.homeShortcuts.classList.contains('recommendations-revealed')) return;
+    for (const art of ui.recommendationPreview.querySelectorAll('.recommendation-song-art')) {
       const track = art.__musicTrack;
       if (track?.artwork) paintRecommendationArtwork(art, track);
       else if (track && !track.artworkLoaded) {
@@ -1435,46 +1563,13 @@ const revealRecommendations = () => {
       }
     }
   });
-};
-ui.homeShortcuts.addEventListener('wheel', event => {
-  if (ui.homeShortcuts.scrollTop <= 1 && event.deltaY < -24) revealRecommendations();
-}, { passive: true });
-ui.homeShortcuts.addEventListener('touchstart', event => {
-  recommendationPullStartY = homeView === 'home' && ui.homeShortcuts.scrollTop <= 1 && !ui.homeShortcuts.classList.contains('recommendations-revealed')
-    ? event.touches[0]?.clientY ?? null
-    : null;
-}, { passive: true });
-ui.homeShortcuts.addEventListener('touchmove', event => {
-  if (recommendationPullStartY === null || homeView !== 'home' || ui.homeShortcuts.scrollTop > 1) return;
-  const currentY = event.touches[0]?.clientY;
-  if (!Number.isFinite(currentY)) return;
-  const distance = Math.max(0, currentY - recommendationPullStartY);
-  if (distance < 8) return;
-  const card = ui.homeShortcuts.querySelector('.recommendations-card');
-  ui.homeShortcuts.classList.add('recommendations-pulling');
-  if (!recommendationPullHeight) recommendationPullHeight = Math.max(card.scrollHeight, 1);
-  const revealedHeight = Math.min(recommendationPullHeight, distance * 2);
-  card.style.maxHeight = `${revealedHeight}px`;
-  card.style.opacity = String(Math.min(1, revealedHeight / 36));
-  card.style.transform = `translateY(${Math.max(-10, -10 + revealedHeight / recommendationPullHeight * 10)}px)`;
-  card.style.marginBottom = revealedHeight > 0 ? '14px' : '0px';
-}, { passive: true });
-ui.homeShortcuts.addEventListener('touchend', event => {
-  const startY = recommendationPullStartY;
-  recommendationPullStartY = null;
-  const endY = event.changedTouches[0]?.clientY;
-  if (startY === null) return;
-  if (Number.isFinite(endY) && endY - startY > 52 && ui.homeShortcuts.scrollTop <= 1) revealRecommendations();
-  else if (ui.homeShortcuts.classList.contains('recommendations-pulling')) {
-    const card = ui.homeShortcuts.querySelector('.recommendations-card');
-    ui.homeShortcuts.classList.remove('recommendations-pulling');
-    card.style.maxHeight = '0px'; card.style.opacity = '0'; card.style.transform = 'translateY(-10px)'; card.style.marginBottom = '0px';
-  }
-}, { passive: true });
+}
+ui.recommendationsToggle.addEventListener('click', () => {
+  setRecommendationsExpanded(!ui.homeShortcuts.classList.contains('recommendations-revealed'));
+});
 ui.homeCreatePlaylistButton.addEventListener('click', () => { ui.playlistName.value = ''; ui.playlistDialog.showModal(); ui.playlistName.focus(); });
 ui.cancelPlaylist.addEventListener('click', () => ui.playlistDialog.close());
 ui.cancelAddPlaylist.addEventListener('click', () => ui.addPlaylistDialog.close());
-ui.addPlaylistDialog.addEventListener('close', () => { trackToAdd = null; selectedPlaylistIds.clear(); });
 ui.playlistForm.addEventListener('submit', event => {
   event.preventDefault(); const name = ui.playlistName.value.trim(); if (!name) return;
   const playlist = { id: crypto.randomUUID(), name, tracks: [] }; playlists.push(playlist); savePlaylists(); ui.playlistDialog.close(); renderPlaylists(); showHome('playlist', playlist.id);
@@ -1501,7 +1596,7 @@ ui.addPlaylistForm.addEventListener('submit', event => {
     }
   }
   if (added.length || removed.length) {
-    if (promoteAdded && addedIds.length) {
+    if (trackToPromote && addedIds.length) {
       const addedSet = new Set(addedIds);
       playlists = [...playlists.filter(playlist => addedSet.has(playlist.id)), ...playlists.filter(playlist => !addedSet.has(playlist.id))];
     }
@@ -1709,6 +1804,41 @@ ui.searchInput.addEventListener('input', () => {
   clearTimeout(searchRenderTimer);
   searchRenderTimer = setTimeout(renderQueue, 90);
   if (ui.searchInput.value.trim()) void indexSearchMetadata();
+});
+ui.playlistMenuButton.addEventListener('click', togglePlaylistMenu);
+ui.playlistMenuName.addEventListener('keydown', event => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  renameCurrentPlaylist();
+});
+window.addEventListener('resize', () => { closePlaylistMenu(); syncRecommendationsHeight(); });
+ui.playlistMenuSave.addEventListener('click', renameCurrentPlaylist);
+ui.playlistMenuDelete.addEventListener('click', () => { void deleteCurrentPlaylist(); });
+ui.playlistCoverGrid.addEventListener('click', event => {
+  const swatch = event.target.closest('[data-cover]');
+  const playlist = currentMenuPlaylist();
+  if (!swatch || !playlist) return;
+  const active = playlistCoverKey(playlist);
+  if (active === swatch.dataset.cover) {
+    delete playlist.cover;
+    showToast('Cover removed', 1500);
+  } else {
+    playlist.cover = swatch.dataset.cover;
+    showToast('Cover updated', 1500);
+  }
+  savePlaylists();
+  syncPlaylistMenuCovers(playlist);
+  renderPlaylists();
+});
+document.addEventListener('pointerdown', event => {
+  if (ui.playlistMenu.hidden || ui.playlistMenuWrap.contains(event.target) || ui.playlistMenu.contains(event.target) || event.target.closest('dialog')) return;
+  closePlaylistMenu();
+});
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape' || ui.playlistMenu.hidden) return;
+  event.preventDefault();
+  closePlaylistMenu();
+  ui.playlistMenuButton.focus();
 });
 ui.sortPickerButton.addEventListener('click', () => {
   const open = ui.sortPickerOptions.hidden;
